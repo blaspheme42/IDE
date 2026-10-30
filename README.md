@@ -2,7 +2,7 @@
 
 IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration tree-sitter, LSP et terminal intégré, le tout dans votre terminal.
 
-**État :** J0 · Fondations en cours
+**État :** J1 · Éditeur (ouvrir, éditer, annuler, sélection, presse-papiers, indentation, rechercher/remplacer)
 
 ## Prérequis
 
@@ -20,7 +20,7 @@ cargo test --workspace    # lance tous les tests
 
 | Crate | Rôle | Dépend de |
 | --- | --- | --- |
-| `ide-app` | Binaire : arguments, boucle d'événements, raccourcis | `ide-core`, `ide-ui` (toutes à terme) |
+| `ide-app` | Binaire : arguments, boucle d'événements, raccourcis, presse-papiers | `ide-core`, `ide-ui`, `ide-workspace` (toutes à terme) |
 | `ide-ui` | Widgets ratatui : explorateur, éditeur, onglets, popups, barre de statut | `ide-core` |
 | `ide-core` | Buffers, curseurs, historique, sélection, commandes ; zéro I/O | — |
 | `ide-syntax` | Coloration et requêtes tree-sitter, thèmes | `ide-core` |
@@ -33,7 +33,12 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 
 - `ide <fichier>` : ouvrir un fichier (créé à la première sauvegarde s'il n'existe pas).
 - `Ctrl+S` : sauvegarder.
-- Flèches, `Début`/`Fin`, `Page préc.`/`Page suiv.` : se déplacer.
+- Flèches, `Début`/`Fin`, `Page préc.`/`Page suiv.` : se déplacer ; avec `Shift`, sélectionner. `Ctrl+A` : tout sélectionner.
+- Souris : clic pour placer le curseur, glisser ou `Shift+clic` pour sélectionner, molette pour défiler. La sélection native du terminal reste possible avec `Shift`+glisser (selon le terminal).
+- `Ctrl+Z` / `Ctrl+Y` (ou `Ctrl+Shift+Z`) : annuler / rétablir, sans limite.
+- `Ctrl+C` / `Ctrl+X` / `Ctrl+V` : copier / couper / coller (sans sélection : la ligne entière). Presse-papiers système, ou interne si aucun n'est disponible (SSH).
+- `Tab` / `Shift+Tab` : indenter / désindenter (la sélection entière si elle couvre plusieurs lignes) ; `Entrée` garde l'indentation. Tabulations ou espaces et largeur selon `.editorconfig` (4 espaces par défaut).
+- `Ctrl+F` / `Ctrl+H` : rechercher / remplacer. Dans la barre : `Entrée` ou `F3` suivant, `Shift+F3` précédent, `Tab` change de champ, `Entrée` dans « Remplacer » remplace l'occurrence courante, `Alt+Entrée` remplace tout, `Alt+R` regex (`$1`, `${nom}` dans le remplacement), `Alt+C` casse, `Échap` ferme.
 - `Ctrl+Q` : quitter ; s'il y a des modifications non sauvegardées, `Ctrl+Q` deux fois pour quitter sans sauvegarder.
 - Logs : `$XDG_STATE_HOME/ide/ide.log` (par défaut `~/.local/state/ide/ide.log`).
 - `ide --panic-test` : panique volontairement après le premier rendu, pour vérifier que le terminal est bien restauré.
