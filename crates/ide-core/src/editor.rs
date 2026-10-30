@@ -1,8 +1,8 @@
 //! Traduction des événements en actions sur l'état (clavier, fichiers, défilement).
 
 use crate::{
-    Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, editor_size, explorer,
-    search,
+    Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, TAB_BAR_HEIGHT,
+    editor_size, explorer, search, tabs,
 };
 
 /// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace, colonne de diagnostics.
@@ -58,10 +58,9 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         }
         Event::Tick => vec![],
         Event::FileOpened { path, text } => {
-            state.doc = Document::from_text(Some(path), &text);
-            state.scroll_line = 0;
-            state.scroll_col = 0;
-            state.status = format!("Ouvert : {}", state.doc.display_name());
+            if tabs::open(state, path, |p| Document::from_text(Some(p), &text)) {
+                state.status = format!("Ouvert : {}", state.doc.display_name());
+            }
             vec![]
         }
         Event::IndentDetected(indent) => {
@@ -78,14 +77,16 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
                 |n| n.to_string_lossy().into(),
             );
             if create {
-                state.doc.path = Some(path);
+                tabs::open(state, path, |p| Document::from_text(Some(p), ""));
             }
             state.status = format!("Impossible d'ouvrir {name} : {error}");
             vec![]
         }
-        Event::Saved { version, .. } => {
-            state.doc.mark_saved(version);
-            state.status = format!("Sauvegardé : {}", state.doc.display_name());
+        Event::Saved { path, version } => {
+            if let Some(doc) = tabs::doc_mut(state, &path) {
+                doc.mark_saved(version);
+                state.status = format!("Sauvegardé : {}", doc.display_name());
+            }
             vec![]
         }
         Event::SaveFailed { error, .. } => {
@@ -106,18 +107,26 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
 fn mouse(state: &mut State, m: MouseInput) {
     let last = state.doc.rope().len_lines() - 1;
     let left = crate::explorer_width(state) + gutter_width(&state.doc);
+    let bottom = TAB_BAR_HEIGHT + editor_size(state).1;
     match m.kind {
+        MouseKind::Down if m.row < TAB_BAR_HEIGHT => {
+            state.dragging = false;
+            let tab = tabs::tab_spans(state)
+                .into_iter()
+                .find(|(r, _)| r.contains(&m.column));
+            if let Some((_, i)) = tab {
+                tabs::activate(state, i);
+            }
+        }
         MouseKind::ScrollUp => state.scroll_line = state.scroll_line.saturating_sub(WHEEL_LINES),
         MouseKind::ScrollDown => state.scroll_line = (state.scroll_line + WHEEL_LINES).min(last),
         MouseKind::Up => state.dragging = false,
         // Un clic hors de la zone de texte est ignoré ; un glisser peut en sortir, s'il y a commencé.
-        MouseKind::Down if m.column < left || m.row >= editor_size(state).1 => {
-            state.dragging = false
-        }
+        MouseKind::Down if m.column < left || m.row >= bottom => state.dragging = false,
         MouseKind::Drag if !state.dragging => {}
         MouseKind::Down | MouseKind::Drag => {
             state.dragging = true;
-            let line = state.scroll_line + usize::from(m.row);
+            let line = state.scroll_line + usize::from(m.row.saturating_sub(TAB_BAR_HEIGHT));
             let col = state.scroll_col + usize::from(m.column.saturating_sub(left));
             let pos = state.doc.pos_at(line, col);
             let extend = m.kind == MouseKind::Drag || m.mods.shift;
@@ -158,13 +167,21 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     {
         k.mods = crate::Modifiers::default();
     }
-    let ctrl_q = k.mods.ctrl && !k.mods.alt && matches!(k.key, Key::Char('q' | 'Q'));
-    if !ctrl_q && state.quit_armed {
+    let ctrl = |c: char| k.mods.ctrl && !k.mods.alt && k.key == Key::Char(c);
+    if !(ctrl('q') || ctrl('Q')) && state.quit_armed {
         state.quit_armed = false;
+        state.status.clear();
+    }
+    if !(ctrl('w') || ctrl('W')) && state.close_armed {
+        state.close_armed = false;
         state.status.clear();
     }
     if let Some(cmds) = explorer::key(state, k) {
         return cmds;
+    }
+    // Avant la recherche, qui prend Tab pour changer de champ.
+    if tabs::key(state, k) {
+        return vec![];
     }
     if search::key(state, k) {
         return vec![];
@@ -174,13 +191,15 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     if k.mods.ctrl && !k.mods.alt {
         match k.key {
             Key::Char('q' | 'Q') => {
-                if !doc.is_dirty() || state.quit_armed {
+                let n = tabs::dirty_count(state);
+                if n == 0 || state.quit_armed {
                     return vec![Command::Quit];
                 }
                 state.quit_armed = true;
-                state.status =
-                    "Modifications non sauvegardées : Ctrl+Q à nouveau pour quitter sans sauvegarder"
-                        .into();
+                let s = if n > 1 { "s" } else { "" };
+                state.status = format!(
+                    "Modifications non sauvegardées ({n} fichier{s}) : Ctrl+Q à nouveau pour quitter sans sauvegarder"
+                );
             }
             Key::Char('s' | 'S') => match doc.path.clone() {
                 Some(path) => {
@@ -281,7 +300,7 @@ mod tests {
             &mut s,
             Event::Resize {
                 width: 40,
-                height: 6,
+                height: 7,
             },
         );
         update(
@@ -387,7 +406,7 @@ mod tests {
 
     #[test]
     fn scroll_suit_le_curseur() {
-        // Zone : 40-30 = 10 colonnes, moins 6 de gouttière = 4 ; 6-1 = 5 lignes.
+        // Zone : 40-30 = 10 colonnes, moins 6 de gouttière = 4 ; 7-1-1 = 5 lignes (statut, onglets).
         let mut s = opened(&"l\n".repeat(20));
         for _ in 0..7 {
             update(&mut s, k(Key::Down));
@@ -540,12 +559,12 @@ mod tests {
     #[test]
     fn glisser_commence_hors_du_texte_ignore() {
         let mut s = opened("abcdef");
-        update(&mut s, souris(MouseKind::Down, 5, 0));
-        update(&mut s, souris(MouseKind::Drag, 39, 0));
+        update(&mut s, souris(MouseKind::Down, 5, 1));
+        update(&mut s, souris(MouseKind::Drag, 39, 1));
         assert_eq!((s.doc.cursor(), s.doc.selection()), (0, None));
-        update(&mut s, souris(MouseKind::Down, 37, 0));
-        update(&mut s, souris(MouseKind::Up, 37, 0));
-        update(&mut s, souris(MouseKind::Drag, 39, 0));
+        update(&mut s, souris(MouseKind::Down, 37, 1));
+        update(&mut s, souris(MouseKind::Up, 37, 1));
+        update(&mut s, souris(MouseKind::Drag, 39, 1));
         assert_eq!(s.doc.selection(), None);
     }
 
@@ -568,34 +587,35 @@ mod tests {
 
     #[test]
     fn souris_clic_glisser_defilement() {
-        // Texte à partir de la colonne 30 + 6 = 36 ; 5 lignes visibles.
+        // Texte à partir de la colonne 30 + 6 = 36 ; 5 lignes visibles, à partir de la ligne 1 (onglets en 0).
         let mut s = opened("abc\nd中e\n");
-        update(&mut s, souris(MouseKind::Down, 37, 0));
+        update(&mut s, souris(MouseKind::Down, 37, 1));
         assert_eq!(s.doc.cursor(), 1);
-        update(&mut s, souris(MouseKind::Drag, 38, 1)); // colonne 2 = milieu de 中 : avant
+        update(&mut s, souris(MouseKind::Drag, 38, 2)); // colonne 2 = milieu de 中 : avant
         assert_eq!(s.doc.selection(), Some(1..5));
-        update(&mut s, souris(MouseKind::Up, 38, 1));
+        update(&mut s, souris(MouseKind::Up, 38, 2));
         assert_eq!(s.doc.selection(), Some(1..5));
         // Au-delà de la fin de ligne, puis au-delà du document.
-        update(&mut s, souris(MouseKind::Down, 39, 0));
+        update(&mut s, souris(MouseKind::Down, 39, 1));
         assert_eq!((s.doc.cursor(), s.doc.selection()), (3, None));
-        update(&mut s, souris(MouseKind::Down, 50, 4));
+        update(&mut s, souris(MouseKind::Down, 50, 5));
         assert_eq!(s.doc.cursor(), 8);
-        // Clic dans l'explorateur ou la barre de statut : ignoré.
-        update(&mut s, souris(MouseKind::Down, 5, 0));
-        update(&mut s, souris(MouseKind::Down, 37, 5));
+        // Clic dans l'explorateur, la barre d'onglets hors onglet ou la barre de statut : ignoré.
+        update(&mut s, souris(MouseKind::Down, 70, 0));
+        update(&mut s, souris(MouseKind::Down, 5, 1));
+        update(&mut s, souris(MouseKind::Down, 37, 6));
         assert_eq!(s.doc.cursor(), 8);
         let mut s = opened(&"l\n".repeat(20));
-        update(&mut s, souris(MouseKind::ScrollDown, 37, 0));
-        update(&mut s, souris(MouseKind::ScrollDown, 37, 0));
+        update(&mut s, souris(MouseKind::ScrollDown, 37, 1));
+        update(&mut s, souris(MouseKind::ScrollDown, 37, 1));
         assert_eq!((s.scroll_line, s.doc.cursor()), (6, 0));
         for _ in 0..10 {
-            update(&mut s, souris(MouseKind::ScrollDown, 37, 0));
+            update(&mut s, souris(MouseKind::ScrollDown, 37, 1));
         }
         assert_eq!(s.scroll_line, 20);
-        update(&mut s, souris(MouseKind::ScrollUp, 37, 0));
+        update(&mut s, souris(MouseKind::ScrollUp, 37, 1));
         assert_eq!(s.scroll_line, 17);
-        update(&mut s, souris(MouseKind::Down, 36, 1));
+        update(&mut s, souris(MouseKind::Down, 36, 2));
         assert_eq!(s.doc.cursor_line_col(), (18, 0));
     }
 }

@@ -2,7 +2,8 @@
 source: crates/ide-ui/src/lib.rs
 expression: b
 ---
-"┌ EXPLORATEUR ───────────────┐   1  foo bar foo baz foo                         "
+"┌ EXPLORATEUR ───────────────┐ a.txt                                            "
+"│                            │   1  foo bar foo baz foo                         "
 "│                            │   2  foo bar foo baz foo                         "
 "│                            │   3  foo bar foo baz foo                         "
 "│                            │   4  foo bar foo baz foo                         "
@@ -23,6 +24,5 @@ expression: b
 "│                            │  19  foo bar foo baz foo                         "
 "│                            │  20  foo bar foo baz foo                         "
 "│                            │  21  foo bar foo baz foo                         "
-"│                            │  22  foo bar foo baz foo                         "
 "└────────────────────────────┘Rechercher : foo                  [.*] [Aa] 5/120 "
 " a.txt | Prêt                                          Ln 1, Col 1 | LF | UTF-8 "

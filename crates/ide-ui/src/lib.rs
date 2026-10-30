@@ -3,7 +3,10 @@
 mod explorer;
 pub mod icons;
 
-use ide_core::{LineEnding, Search, State, explorer_width, gutter_width, search_bar_height};
+use ide_core::{
+    LineEnding, Search, State, TAB_BAR_HEIGHT, explorer_width, gutter_width, search_bar_height,
+    tab_label, tab_list, tab_scroll,
+};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -23,6 +26,8 @@ const MATCH_CURRENT: Style = Style::new().fg(Color::Black).bg(Color::Yellow);
 /// Indicateurs `[.*]` `[Aa]` de la barre de recherche.
 const FLAG_ON: Style = Style::new().fg(Color::Black).bg(Color::Gray);
 const FLAG_OFF: Style = Style::new().fg(Color::DarkGray);
+/// Onglet actif dans la barre d'onglets.
+const TAB_ACTIVE: Style = Style::new().add_modifier(Modifier::BOLD.union(Modifier::REVERSED));
 
 /// Dessine toute l'interface à partir de l'état. Pure : aucune I/O.
 pub fn render(state: &State, frame: &mut Frame) {
@@ -33,8 +38,9 @@ pub fn render(state: &State, frame: &mut Frame) {
         Constraint::Min(0),
     ])
     .areas(main);
-    // Même hauteur que `editor_size` : la barre de recherche est prise sur la zone éditeur.
-    let [editor, bar] = Layout::vertical([
+    // Même hauteur que `editor_size` : barres d'onglets et de recherche prises sur la zone éditeur.
+    let [tabs, editor, bar] = Layout::vertical([
+        Constraint::Length(TAB_BAR_HEIGHT),
         Constraint::Min(0),
         Constraint::Length(search_bar_height(state)),
     ])
@@ -48,6 +54,7 @@ pub fn render(state: &State, frame: &mut Frame) {
     if explorer.width > 0 {
         explorer::render(state, frame, explorer);
     }
+    tab_bar(state, tabs, frame);
 
     let doc = &state.doc;
     let rope = doc.rope();
@@ -160,6 +167,22 @@ pub fn render(state: &State, frame: &mut Frame) {
     );
     frame.render_widget(Paragraph::new(left), status);
     frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), status);
+}
+
+/// Barre d'onglets ` nom ● │ nom2 │ …`, défilée comme `tab_spans` pour garder l'actif visible.
+fn tab_bar(state: &State, area: Rect, frame: &mut Frame) {
+    let mut spans = Vec::new();
+    for t in tab_list(state) {
+        if !spans.is_empty() {
+            spans.push(Span::styled("│", Style::new().fg(Color::DarkGray)));
+        }
+        let style = if t.active { TAB_ACTIVE } else { Style::new() };
+        spans.push(Span::styled(tab_label(&t), style));
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).scroll((0, tab_scroll(state))),
+        area,
+    );
 }
 
 /// Barre de recherche : `Rechercher : <query>` + indicateurs et compteur à droite,
@@ -299,7 +322,7 @@ mod tests {
     fn document_vide() {
         let backend = draw(&state(Document::from_text(None, "")));
         insta::assert_snapshot!(backend);
-        assert_eq!(backend.cursor_position(), Position::new(36, 0));
+        assert_eq!(backend.cursor_position(), Position::new(36, 1));
     }
 
     #[test]
@@ -317,7 +340,7 @@ mod tests {
         let backend = draw(&state(doc));
         insta::assert_snapshot!(backend);
         // "\t// 🦀" : tab (4) + "// " (3) + 🦀 (2) = colonne 9.
-        assert_eq!(backend.cursor_position(), Position::new(36 + 9, 2));
+        assert_eq!(backend.cursor_position(), Position::new(36 + 9, 3));
     }
 
     #[test]
@@ -342,6 +365,32 @@ mod tests {
     }
 
     #[test]
+    fn barre_d_onglets() {
+        let mut s = state(Document::from_text(Some("b.rs".into()), "x"));
+        s.tabs.push(ide_core::Tab {
+            doc: Document::from_text(Some("a.rs".into()), ""),
+            ..ide_core::Tab::default()
+        });
+        s.active = 1;
+        s.doc.insert_char('y');
+        let b = draw(&s);
+        let line: String = (30..80).map(|x| b.buffer()[(x, 0)].symbol()).collect();
+        assert_eq!(line.trim_end(), " a.rs │ b.rs ●");
+        // Actif en gras inversé, les autres en style normal.
+        let cell = |x: u16| b.buffer()[(x, 0)].modifier;
+        assert!(cell(38).contains(Modifier::BOLD | Modifier::REVERSED));
+        assert!(cell(31).is_empty());
+        // Trop étroit : la barre défile pour montrer l'actif en entier.
+        s.width = 40;
+        let mut t = Terminal::new(TestBackend::new(40, 24)).unwrap();
+        t.draw(|f| render(&s, f)).unwrap();
+        let line: String = (30..40)
+            .map(|x| t.backend().buffer()[(x, 0)].symbol())
+            .collect();
+        assert_eq!(line, " │ b.rs ● ");
+    }
+
+    #[test]
     fn tranche_visible() {
         let s = |t: &str, start, width| -> String {
             visible_slice(t.chars(), start, width, 4, |_| Style::new())
@@ -356,8 +405,9 @@ mod tests {
         assert_eq!(s("abc\n", 1, 10), "bc");
     }
 
-    /// Zone texte : x = 30 (explorateur) + 6 (gouttière).
+    /// Zone texte : x = 30 (explorateur) + 6 (gouttière), y = 1 (sous la barre d'onglets).
     const X: u16 = 36;
+    const Y: u16 = TAB_BAR_HEIGHT;
 
     fn selectionne(doc: Document, sel: Range<usize>, scroll_col: usize) -> TestBackend {
         let mut doc = doc;
@@ -371,7 +421,11 @@ mod tests {
     /// Colonnes de la ligne `y` (relatives à la zone texte) en style inversé, parmi 0..n.
     fn inverses(b: &TestBackend, y: u16, n: u16) -> Vec<u16> {
         (0..n)
-            .filter(|&x| b.buffer()[(X + x, y)].modifier.contains(Modifier::REVERSED))
+            .filter(|&x| {
+                b.buffer()[(X + x, Y + y)]
+                    .modifier
+                    .contains(Modifier::REVERSED)
+            })
             .collect()
     }
 
@@ -380,7 +434,7 @@ mod tests {
         let b = selectionne(Document::from_text(None, "abcdef"), 1..4, 0);
         assert_eq!(inverses(&b, 0, 10), [1, 2, 3]);
         // Pas de ligne courante surlignée pendant une sélection.
-        assert_eq!(b.buffer()[(X + 8, 0)].bg, Color::Reset);
+        assert_eq!(b.buffer()[(X + 8, Y)].bg, Color::Reset);
     }
 
     #[test]
@@ -404,7 +458,7 @@ mod tests {
         // scroll 5 : 🦀 coupé à gauche → espace sélectionné en 0, x en 1 non sélectionné.
         let b = selectionne(doc(), 1..2, 5);
         assert_eq!(inverses(&b, 0, 10), [0]);
-        assert_eq!(b.buffer()[(X + 1, 0)].symbol(), "x");
+        assert_eq!(b.buffer()[(X + 1, Y)].symbol(), "x");
     }
 
     #[test]
@@ -412,13 +466,13 @@ mod tests {
         let mut doc = Document::from_text(None, "a\nb");
         doc.move_down(1, false);
         let b = draw(&state(doc));
-        let bg = |x, y| b.buffer()[(x, y)].bg;
+        let bg = |x, y| b.buffer()[(x, Y + y)].bg;
         assert_eq!(bg(X, 1), Color::DarkGray);
         assert_eq!(bg(79, 1), Color::DarkGray);
         assert_eq!(bg(X - 1, 1), Color::Reset, "gouttière non surlignée");
         assert_eq!(bg(X, 0), Color::Reset);
         // Numéro de ligne courant en gras.
-        assert!(b.buffer()[(33, 1)].modifier.contains(Modifier::BOLD));
+        assert!(b.buffer()[(33, Y + 1)].modifier.contains(Modifier::BOLD));
     }
 
     #[test]
@@ -431,8 +485,8 @@ mod tests {
         };
         doc.move_right(false);
         let b = draw(&state(doc));
-        assert_eq!(b.buffer()[(X + 8, 0)].symbol(), "x");
-        assert_eq!(b.cursor_position(), Position::new(X + 8, 0));
+        assert_eq!(b.buffer()[(X + 8, Y)].symbol(), "x");
+        assert_eq!(b.cursor_position(), Position::new(X + 8, Y));
     }
 
     /// Document « foo bar foo baz foo » répété sur 40 lignes, occurrences de « foo » ; courante = `current`.
@@ -469,9 +523,9 @@ mod tests {
         assert_eq!(fg(at("[Aa]")), Color::Gray);
         assert_eq!(fg(at("[.*]")), Color::Reset);
         assert!(line.contains("5/120"));
-        // La zone de texte s'arrête au-dessus : 22 lignes visibles.
+        // La zone de texte s'arrête au-dessus : 21 lignes visibles, sous la barre d'onglets.
         assert_eq!(b.buffer()[(0, 21)].symbol(), "│");
-        assert_eq!(b.buffer()[(33, 21)].symbol(), "2");
+        assert_eq!(b.buffer()[(33, 21)].symbol(), "1");
     }
 
     #[test]
@@ -507,7 +561,7 @@ mod tests {
     fn occurrences_surlignees() {
         let s = recherche(None, 4); // ligne 1, colonne 8
         let b = draw(&s);
-        let cell = |x, y| b.buffer()[(X + x, y)].clone();
+        let cell = |x, y| b.buffer()[(X + x, Y + y)].clone();
         assert_eq!(cell(8, 1).bg, Color::Yellow);
         assert_eq!(cell(10, 1).fg, Color::Black);
         assert_eq!(cell(11, 1).bg, Color::Reset);
@@ -526,15 +580,15 @@ mod tests {
         s.doc.set_cursor(8, false);
         s.doc.set_cursor(11, true);
         let b = draw(&s);
-        for y in 0..22 {
+        for y in Y..22 {
             for x in 0..44 {
                 assert_ne!(b.buffer()[(X + x, y)].bg, Color::Yellow, "({x}, {y})");
             }
         }
         // La sélection l'emporte sur le surlignage.
-        assert!(b.buffer()[(X + 8, 0)].modifier.contains(Modifier::REVERSED));
+        assert!(b.buffer()[(X + 8, Y)].modifier.contains(Modifier::REVERSED));
         assert!(
-            !b.buffer()[(X + 8, 0)]
+            !b.buffer()[(X + 8, Y)]
                 .modifier
                 .contains(Modifier::UNDERLINED)
         );

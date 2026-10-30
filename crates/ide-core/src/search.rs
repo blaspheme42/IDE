@@ -483,13 +483,14 @@ mod tests {
     #[test]
     fn editor_size_reduit_par_la_barre() {
         let mut s = opened("a");
-        assert_eq!(editor_size(&s), (10, 9));
-        update(&mut s, ctrl('f'));
+        // 10 lignes moins la barre d'onglets et le statut.
         assert_eq!(editor_size(&s), (10, 8));
-        update(&mut s, ctrl('h'));
+        update(&mut s, ctrl('f'));
         assert_eq!(editor_size(&s), (10, 7));
+        update(&mut s, ctrl('h'));
+        assert_eq!(editor_size(&s), (10, 6));
         update(&mut s, k(Key::Esc));
-        assert_eq!(editor_size(&s), (10, 9));
+        assert_eq!(editor_size(&s), (10, 8));
     }
 
     #[test]
