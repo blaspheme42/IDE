@@ -33,17 +33,20 @@ impl Clip {
 
     fn copy(&mut self, text: String) {
         if let Some(Err(e)) = self.system.as_mut().map(|c| c.set_text(text.as_str())) {
+            // Écriture refusée : le système ne suit plus, on bascule sur l'interne pour la suite.
             self.warn_once(e);
+            self.system = None;
         }
         self.internal = text;
     }
 
+    /// Vide si le presse-papiers système n'a pas de texte (image, vide) : jamais un texte périmé.
     fn paste(&mut self) -> String {
         match self.system.as_mut().map(|c| c.get_text()) {
             Some(Ok(text)) => text,
             Some(Err(e)) => {
-                self.warn_once(e);
-                self.internal.clone()
+                tracing::debug!("presse-papiers sans texte : {e}");
+                String::new()
             }
             None => self.internal.clone(),
         }

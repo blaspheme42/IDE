@@ -5,8 +5,11 @@ use crate::{
     editor_size, search,
 };
 
-/// Colonnes réservées par l'UI aux numéros de ligne, à gauche du texte.
-pub const GUTTER_WIDTH: u16 = 6;
+/// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace, colonne de diagnostics.
+pub fn gutter_width(doc: &Document) -> u16 {
+    let digits = doc.rope().len_lines().to_string().len().max(4);
+    u16::try_from(digits + 2).unwrap_or(u16::MAX)
+}
 
 /// Lignes défilées par cran de molette.
 const WHEEL_LINES: usize = 3;
@@ -27,6 +30,17 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         }
         // Presse-papiers vide : rien à coller, la sélection reste.
         Event::Paste(text) if text.is_empty() => vec![],
+        // Ligne entière copiée sans sélection : collée au-dessus de la ligne courante, comme VSCode.
+        Event::Paste(text)
+            if state.doc.selection().is_none() && state.line_clip.as_ref() == Some(&text) =>
+        {
+            let doc = &mut state.doc;
+            let cursor = doc.cursor();
+            let start = doc.rope().line_to_char(doc.rope().char_to_line(cursor));
+            doc.edit(start..start, &text);
+            doc.set_cursor(cursor + text.chars().count(), false);
+            vec![]
+        }
         Event::Paste(text) => {
             state.doc.insert_str(&text);
             vec![]
@@ -48,10 +62,19 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             state.doc.indent = indent;
             vec![]
         }
-        Event::OpenFailed { path, error } => {
-            // Le chemin est gardé : Ctrl+S créera le fichier s'il était introuvable.
-            state.doc.path = Some(path);
-            state.status = format!("Impossible d'ouvrir {} : {error}", state.doc.display_name());
+        Event::OpenFailed {
+            path,
+            error,
+            create,
+        } => {
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into(),
+            );
+            if create {
+                state.doc.path = Some(path);
+            }
+            state.status = format!("Impossible d'ouvrir {name} : {error}");
             vec![]
         }
         Event::Saved { version, .. } => {
@@ -76,7 +99,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
 
 fn mouse(state: &mut State, m: MouseInput) {
     let last = state.doc.rope().len_lines() - 1;
-    let left = EXPLORER_WIDTH + GUTTER_WIDTH;
+    let left = EXPLORER_WIDTH + gutter_width(&state.doc);
     match m.kind {
         MouseKind::ScrollUp => state.scroll_line = state.scroll_line.saturating_sub(WHEEL_LINES),
         MouseKind::ScrollDown => state.scroll_line = (state.scroll_line + WHEEL_LINES).min(last),
@@ -97,27 +120,38 @@ fn mouse(state: &mut State, m: MouseInput) {
     }
 }
 
-/// Texte copié : la sélection, sinon la ligne courante avec son `\n` (comme VSCode).
-fn copied(doc: &Document) -> (std::ops::Range<usize>, String) {
+/// Texte copié et plage à couper : la sélection, sinon la ligne courante avec son `\n` (comme VSCode).
+/// `true` = ligne entière.
+fn copied(doc: &Document) -> (std::ops::Range<usize>, String, bool) {
     if let Some(r) = doc.selection() {
-        return (r.clone(), doc.rope().slice(r).to_string());
+        return (r.clone(), doc.rope().slice(r).to_string(), false);
     }
     let rope = doc.rope();
     let line = rope.char_to_line(doc.cursor());
-    let end = if line + 1 < rope.len_lines() {
-        rope.line_to_char(line + 1)
+    let start = rope.line_to_char(line);
+    let r = if line + 1 < rope.len_lines() {
+        start..rope.line_to_char(line + 1)
     } else {
-        rope.len_chars()
+        // Dernière ligne sans `\n` : on coupe le saut de ligne qui la précède, pas de ligne vide qui reste.
+        start.saturating_sub(1)..rope.len_chars()
     };
-    let r = rope.line_to_char(line)..end;
-    let mut text = rope.slice(r.clone()).to_string();
+    let mut text = rope.slice(start..r.end).to_string();
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    (r, text)
+    (r, text, true)
 }
 
-fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
+fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
+    // AltGr arrive comme Ctrl+Alt sur certains terminaux (AZERTY : AltGr+4 = `{`) : c'est un caractère tapé.
+    if let Key::Char(c) = k.key
+        && k.mods.ctrl
+        && k.mods.alt
+        && !c.is_ascii_alphanumeric()
+        && !c.is_control()
+    {
+        k.mods = crate::Modifiers::default();
+    }
     let ctrl_q = k.mods.ctrl && !k.mods.alt && matches!(k.key, Key::Char('q' | 'Q'));
     if !ctrl_q && state.quit_armed {
         state.quit_armed = false;
@@ -162,10 +196,11 @@ fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
             }
             Key::Char('a' | 'A') => doc.select_all(),
             Key::Char(c @ ('c' | 'C' | 'x' | 'X')) => {
-                let (r, text) = copied(doc);
+                let (r, text, whole_line) = copied(doc);
                 if c.eq_ignore_ascii_case(&'x') {
                     doc.edit(r, "");
                 }
+                state.line_clip = whole_line.then(|| text.clone());
                 return vec![Command::CopyToClipboard(text)];
             }
             Key::Char('v' | 'V') => return vec![Command::RequestPaste],
@@ -205,7 +240,7 @@ fn scroll_to_cursor(state: &mut State) {
     let (line, col) = state.doc.cursor_line_col();
     let (w, h) = editor_size(state);
     let h = usize::from(h).max(1);
-    let w = usize::from(w.saturating_sub(GUTTER_WIDTH)).max(1);
+    let w = usize::from(w.saturating_sub(gutter_width(&state.doc))).max(1);
     state.scroll_line = state.scroll_line.clamp(line.saturating_sub(h - 1), line);
     state.scroll_col = state.scroll_col.clamp(col.saturating_sub(w - 1), col);
 }
@@ -303,6 +338,7 @@ mod tests {
             Event::OpenFailed {
                 path: "/x/neuf.rs".into(),
                 error: "introuvable".into(),
+                create: true,
             },
         );
         assert_eq!(s.status, "Impossible d'ouvrir neuf.rs : introuvable");
@@ -311,6 +347,18 @@ mod tests {
             update(&mut s, ctrl('s')).as_slice(),
             [Command::Save { .. }]
         ));
+        // Fichier illisible : Ctrl+S ne doit pas l'écraser avec un buffer vide.
+        let mut s = State::default();
+        update(
+            &mut s,
+            Event::OpenFailed {
+                path: "/x/latin1.txt".into(),
+                error: "non UTF-8".into(),
+                create: false,
+            },
+        );
+        assert_eq!(s.status, "Impossible d'ouvrir latin1.txt : non UTF-8");
+        assert!(update(&mut s, ctrl('s')).is_empty());
     }
 
     #[test]
@@ -425,8 +473,14 @@ mod tests {
             update(&mut s, ctrl('x')),
             vec![Command::CopyToClipboard("deux\n".into())]
         );
-        assert_eq!(texte(&s), "un\n");
-        update(&mut s, k(Key::Up));
+        // Dernière ligne sans `\n` : le saut de ligne précédent part avec elle.
+        assert_eq!(texte(&s), "un");
+        // Collée au-dessus de la ligne courante, curseur sur la même colonne.
+        update(&mut s, k(Key::End));
+        update(&mut s, Event::Paste("deux\n".into()));
+        assert_eq!(texte(&s), "deux\nun");
+        assert_eq!(s.doc.cursor_line_col(), (1, 2));
+        let mut s = opened("un\n");
         update(&mut s, avec(Key::Right, false, true));
         assert_eq!(
             update(&mut s, ctrl('x')),
@@ -438,6 +492,40 @@ mod tests {
         assert_eq!(texte(&s), "a\nbn\n");
         update(&mut s, ctrl('z'));
         assert_eq!(texte(&s), "n\n");
+    }
+
+    #[test]
+    fn gouttiere_s_elargit_au_dela_de_9999_lignes() {
+        assert_eq!(gutter_width(&Document::default()), 6);
+        assert_eq!(
+            gutter_width(&Document::from_text(None, &"\n".repeat(9_998))),
+            6
+        );
+        assert_eq!(
+            gutter_width(&Document::from_text(None, &"\n".repeat(9_999))),
+            7
+        );
+    }
+
+    #[test]
+    fn altgr_en_ctrl_alt_insere_le_caractere() {
+        let mut s = opened("");
+        let altgr = |c| {
+            Event::Key(KeyInput {
+                key: Key::Char(c),
+                mods: Modifiers {
+                    ctrl: true,
+                    alt: true,
+                    shift: false,
+                },
+            })
+        };
+        update(&mut s, altgr('{'));
+        update(&mut s, altgr('€'));
+        assert_eq!(s.doc.rope().to_string(), "{€");
+        // Une vraie combinaison Ctrl+Alt+lettre reste un raccourci.
+        update(&mut s, altgr('x'));
+        assert_eq!(s.doc.rope().to_string(), "{€");
     }
 
     #[test]
@@ -463,6 +551,7 @@ mod tests {
         let indent = crate::Indent {
             use_tabs: true,
             width: 8,
+            tab_width: 8,
         };
         update(&mut s, Event::IndentDetected(indent));
         assert_eq!(s.doc.indent, indent);

@@ -2,13 +2,13 @@
 
 use std::path::PathBuf;
 
-pub mod document;
+mod document;
 mod editor;
 mod history;
 mod search;
 
 pub use document::{Document, Indent, LineEnding};
-pub use editor::GUTTER_WIDTH;
+pub use editor::gutter_width;
 pub use search::Search;
 
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).
@@ -82,9 +82,12 @@ pub enum Event {
     },
     /// Style d'indentation du fichier ouvert (.editorconfig), lu par l'app.
     IndentDetected(Indent),
+    /// `create` : le fichier n'existe pas encore, Ctrl+S le créera. Sinon le chemin est oublié,
+    /// pour qu'un Ctrl+S n'écrase pas un fichier qu'on n'a pas pu lire (non UTF-8, permission…).
     OpenFailed {
         path: PathBuf,
         error: String,
+        create: bool,
     },
     /// `version` = celle transmise dans `Command::Save`.
     Saved {
@@ -125,6 +128,8 @@ pub struct State {
     pub quit_armed: bool,
     /// Bouton gauche enfoncé dans la zone de texte : un glisser étend la sélection.
     pub dragging: bool,
+    /// Dernière copie faite sans sélection (ligne entière) : elle se colle au-dessus de la ligne courante.
+    pub line_clip: Option<String>,
     /// Barre de recherche ouverte (Ctrl+F / Ctrl+H).
     pub search: Option<Search>,
 }

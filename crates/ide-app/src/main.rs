@@ -78,13 +78,18 @@ async fn run(
         .await?;
         let ev = match read {
             Ok(text) => Event::FileOpened { path, text },
-            Err(error) => Event::OpenFailed { path, error },
+            Err(error) => Event::OpenFailed {
+                create: error == files::NEW_FILE,
+                path,
+                error,
+            },
         };
         tx.send(ev).await?;
         // Après l'ouverture, qui remet le document à zéro.
         tx.send(Event::IndentDetected(ide_core::Indent {
             use_tabs: style.use_tabs,
             width: style.width,
+            tab_width: style.tab_width,
         }))
         .await?;
     }

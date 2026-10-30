@@ -20,7 +20,10 @@ pub enum LineEnding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Indent {
     pub use_tabs: bool,
+    /// Largeur d'un niveau d'indentation.
     pub width: usize,
+    /// Largeur d'affichage d'une tabulation.
+    pub tab_width: usize,
 }
 
 impl Default for Indent {
@@ -28,6 +31,7 @@ impl Default for Indent {
         Self {
             use_tabs: false,
             width: 4,
+            tab_width: 4,
         }
     }
 }
@@ -98,11 +102,12 @@ fn advance(col: usize, g: &str, tab: usize) -> usize {
 }
 
 impl Document {
-    /// Détecte LF/CRLF (majoritaire sur le texte), normalise en `\n`, curseur au début.
+    /// Détecte CRLF (toutes les fins de ligne) et normalise en `\n` ; sinon LF, texte gardé tel quel. Curseur au début.
     pub fn from_text(path: Option<PathBuf>, text: &str) -> Self {
         let crlf = text.matches("\r\n").count();
         let lf = text.matches('\n').count() - crlf;
-        let (line_ending, rope) = if crlf > lf {
+        // CRLF seulement si toutes les fins de ligne le sont : un fichier mixte reste octet pour octet.
+        let (line_ending, rope) = if crlf > 0 && lf == 0 {
             (
                 LineEnding::CrLf,
                 Rope::from_str(&text.replace("\r\n", "\n")),
@@ -176,11 +181,7 @@ impl Document {
 
     /// Largeur d'affichage d'une tabulation : `width` (tab_width de .editorconfig) si indentation par tabs, sinon 4.
     pub fn tab_width(&self) -> usize {
-        if self.indent.use_tabs {
-            self.indent.width.max(1)
-        } else {
-            4
-        }
+        self.indent.tab_width.max(1)
     }
 
     /// Colonne d'affichage de l'index de `char` `char_col` dans la ligne `line`.
@@ -362,13 +363,16 @@ impl Document {
                 .collect();
             return self.reindent(edits);
         }
+        let (r, kind) = self.target();
         let text = if self.indent.use_tabs {
             "\t".into()
         } else {
+            // Taquet calculé depuis le début de la plage remplacée, pas depuis le curseur.
+            let line = self.rope.char_to_line(r.start);
+            let col = self.display_col(line, r.start - self.rope.line_to_char(line));
             let w = self.indent.width.max(1);
-            " ".repeat(w - self.cursor_line_col().1 % w)
+            " ".repeat(w - col % w)
         };
-        let (r, kind) = self.target();
         self.apply(r, &text, kind);
     }
 
@@ -615,12 +619,14 @@ mod tests {
             "",
             "\r\n",
             "x\r\r\n",
+            "a\r\nb\r\nc\n",
         ] {
             let d = doc(text);
             assert_eq!(d.to_saved_text(), text, "{text:?}");
         }
         assert_eq!(doc("a\r\nb\r\n").rope().to_string(), "a\nb\n");
-        assert_eq!(doc("a\r\nb\r\nc\n").line_ending, LineEnding::CrLf);
+        // Mixte : gardé tel quel, les nouvelles lignes seront en LF.
+        assert_eq!(doc("a\r\nb\r\nc\n").line_ending, LineEnding::Lf);
         assert_eq!(doc("a\r\nb\nc\n").line_ending, LineEnding::Lf);
     }
 
@@ -671,18 +677,36 @@ mod tests {
     }
 
     #[test]
+    fn seul_lf_coupe_les_lignes() {
+        // Saut de page, U+2028 ou `\r` isolé ne sont pas des fins de ligne (comme rustc et le LSP).
+        assert_eq!(doc("a\x0Cb\nc\n").rope().len_lines(), 3);
+        assert_eq!(doc("a\u{2028}b\rc").rope().len_lines(), 1);
+        assert_eq!(doc("a\r\nb").rope().len_lines(), 2);
+    }
+
+    #[test]
+    fn tab_sur_selection_d_une_ligne_depuis_son_debut() {
+        let mut d = doc("abc");
+        d.set_cursor(0, false);
+        d.set_cursor(3, true);
+        d.tab();
+        assert_eq!(d.rope().to_string(), "    ");
+    }
+
+    #[test]
     fn largeur_tabulation_editorconfig() {
         let mut d = doc("a\tb\tc");
         d.indent = Indent {
             use_tabs: true,
-            width: 8,
+            width: 4,
+            tab_width: 8,
         };
         assert_eq!(d.display_col(0, 2), 8);
         assert_eq!(d.display_col(0, 4), 16);
         assert_eq!(d.pos_at(0, 9), 3); // clic juste après « b » → après b
-        // Indentation par espaces : tabulation affichée sur 4, quelle que soit la largeur.
+        // Indentation par espaces : `tab_width` s'applique toujours à l'affichage.
         d.indent.use_tabs = false;
-        assert_eq!(d.display_col(0, 2), 4);
+        assert_eq!(d.display_col(0, 2), 8);
     }
 
     #[test]
@@ -984,7 +1008,11 @@ mod tests {
 
     fn avec_indent(text: &str, use_tabs: bool, width: usize) -> Document {
         let mut d = doc(text);
-        d.indent = Indent { use_tabs, width };
+        d.indent = Indent {
+            use_tabs,
+            width,
+            tab_width: width,
+        };
         d
     }
 

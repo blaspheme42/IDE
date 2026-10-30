@@ -1,6 +1,6 @@
 //! Crate ide-ui : widgets ratatui.
 
-use ide_core::{EXPLORER_WIDTH, GUTTER_WIDTH, LineEnding, Search, State, search_bar_height};
+use ide_core::{EXPLORER_WIDTH, LineEnding, Search, State, gutter_width, search_bar_height};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -33,8 +33,11 @@ pub fn render(state: &State, frame: &mut Frame) {
         Constraint::Length(search_bar_height(state)),
     ])
     .areas(editor);
-    let [gutter, text] =
-        Layout::horizontal([Constraint::Length(GUTTER_WIDTH), Constraint::Min(0)]).areas(editor);
+    let [gutter, text] = Layout::horizontal([
+        Constraint::Length(gutter_width(&state.doc)),
+        Constraint::Min(0),
+    ])
+    .areas(editor);
 
     frame.render_widget(Block::bordered().title(" EXPLORATEUR "), explorer);
 
@@ -61,9 +64,16 @@ pub fn render(state: &State, frame: &mut Frame) {
         } else {
             Style::new()
         };
-        // Gouttière : numéro sur 4 colonnes (jusqu'à 9999), espace, colonne de diagnostics (vide avant le LSP).
+        // Gouttière : numéro aligné à droite, espace, colonne de diagnostics (vide avant le LSP).
         numbers.push(Line::from(vec![
-            Span::styled(format!("{:>4}", i + 1), style),
+            Span::styled(
+                format!(
+                    "{:>w$}",
+                    i + 1,
+                    w = usize::from(gutter.width).saturating_sub(2)
+                ),
+                style,
+            ),
             Span::raw(" "),
             Span::raw(" "),
         ]));
@@ -409,6 +419,7 @@ mod tests {
         doc.indent = ide_core::Indent {
             use_tabs: true,
             width: 8,
+            tab_width: 8,
         };
         doc.move_right(false);
         let b = draw(&state(doc));

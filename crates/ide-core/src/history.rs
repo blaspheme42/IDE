@@ -52,7 +52,7 @@ impl History {
         self.sealed = true;
     }
 
-    /// Enregistre une édition (une seule `Change`) en la fusionnant si possible ; vide la pile redo.
+    /// Enregistre une édition en la fusionnant si possible avec la précédente ; vide la pile redo.
     pub fn record(&mut self, mut e: Entry) {
         self.redo.clear();
         let word_break =

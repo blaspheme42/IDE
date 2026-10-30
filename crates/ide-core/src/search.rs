@@ -6,8 +6,8 @@ use regex::{Regex, RegexBuilder};
 
 use crate::{Key, KeyInput, State};
 
-/// shortcut: recalcul complet sur tout le texte à chaque frappe ou édition, borné à ce nombre
-/// d'occurrences ; passer à une recherche incrémentale par fenêtre si les gros fichiers rament.
+/// shortcut: recalcul complet sur tout le texte à chaque frappe ou édition, surlignage borné à ce
+/// nombre d'occurrences (pas « tout remplacer ») ; passer à une recherche par fenêtre si les gros fichiers rament.
 const MAX_MATCHES: usize = 10_000;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -55,12 +55,12 @@ impl Search {
 }
 
 /// Occurrences non vides de `re` en plages de char, avec leur remplacement (`$1`, `${nom}`) si `rep` est donné.
-fn scan(text: &str, re: &Regex, rep: Option<&str>) -> Vec<(Range<usize>, String)> {
+fn scan(text: &str, re: &Regex, rep: Option<&str>, limit: usize) -> Vec<(Range<usize>, String)> {
     let (mut byte, mut chars) = (0, 0);
     re.captures_iter(text)
         .filter_map(|c| Some((c.get(0)?, c)))
         .filter(|(m, _)| !m.is_empty())
-        .take(MAX_MATCHES)
+        .take(limit)
         .map(|(m, c)| {
             chars += text[byte..m.start()].chars().count();
             let start = chars;
@@ -100,7 +100,7 @@ pub(crate) fn refresh(state: &mut State, select: bool) {
     s.error = None;
     s.matches = match s.compile() {
         _ if s.query.is_empty() => vec![],
-        Ok(re) => scan(&state.doc.rope().to_string(), &re, None)
+        Ok(re) => scan(&state.doc.rope().to_string(), &re, None, MAX_MATCHES)
             .into_iter()
             .map(|(r, _)| r)
             .collect(),
@@ -126,6 +126,7 @@ fn show(state: &mut State, select: bool) {
     state.status = match (&s.error, s.current) {
         (Some(e), _) => e.clone(),
         _ if s.query.is_empty() => String::new(),
+        (None, Some(i)) if s.matches.len() >= MAX_MATCHES => format!("{}/{MAX_MATCHES}+", i + 1),
         (None, Some(i)) => format!("{}/{}", i + 1, s.matches.len()),
         (None, None) => "Aucun résultat".into(),
     };
@@ -172,12 +173,26 @@ fn replacements(state: &State) -> Option<Vec<(Range<usize>, String)>> {
     } else {
         rep.replace('$', "$$")
     };
-    Some(scan(&state.doc.rope().to_string(), &re, Some(&rep)))
+    Some(scan(
+        &state.doc.rope().to_string(),
+        &re,
+        Some(&rep),
+        usize::MAX,
+    ))
 }
 
-/// Remplace l'occurrence courante puis passe à la suivante.
+/// Remplace l'occurrence sélectionnée puis passe à la suivante. Si le curseur a bougé
+/// (sélection ≠ une occurrence), va d'abord à l'occurrence suivante sans rien remplacer, comme VSCode.
 fn replace_one(state: &mut State) {
-    let current = state.search.as_ref().and_then(|s| s.current);
+    let sel = state.doc.selection();
+    let current = state
+        .search
+        .as_ref()
+        .and_then(|s| s.matches.iter().position(|r| Some(r) == sel.as_ref()));
+    if current.is_none() {
+        refresh(state, true);
+        return;
+    }
     let one = current.and_then(|i| replacements(state)?.into_iter().nth(i));
     if let Some((r, text)) = one {
         state.doc.edit(r, &text);
@@ -390,6 +405,37 @@ mod tests {
         update(&mut s, k(Key::Enter));
         assert_eq!(texte(&s), "aa aa a");
         assert_eq!(s.doc.selection(), Some(6..7));
+    }
+
+    #[test]
+    fn plus_de_10000_occurrences() {
+        use super::MAX_MATCHES;
+        let mut s = opened(&"a".repeat(MAX_MATCHES + 5));
+        update(&mut s, ctrl('h'));
+        taper(&mut s, "a");
+        assert_eq!(s.status, format!("1/{MAX_MATCHES}+"));
+        update(&mut s, k(Key::Tab));
+        taper(&mut s, "b");
+        update(&mut s, touche(Key::Enter, false, true, false));
+        assert_eq!(texte(&s), "b".repeat(MAX_MATCHES + 5));
+    }
+
+    #[test]
+    fn remplacer_apres_deplacement_du_curseur() {
+        let mut s = opened("ab ab ab");
+        update(&mut s, ctrl('h'));
+        taper(&mut s, "ab");
+        update(&mut s, k(Key::Tab));
+        taper(&mut s, "X");
+        // Le curseur part vers la fin : Entrée sélectionne d'abord la 3e occurrence, sans remplacer.
+        s.doc.set_cursor(5, false);
+        update(&mut s, k(Key::Enter));
+        assert_eq!(
+            (texte(&s).as_str(), s.doc.selection()),
+            ("ab ab ab", Some(6..8))
+        );
+        update(&mut s, k(Key::Enter));
+        assert_eq!(texte(&s), "ab ab X");
     }
 
     #[test]

@@ -8,7 +8,10 @@ use ec4rs::property::{IndentSize, IndentStyle as Style, TabWidth};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndentStyle {
     pub use_tabs: bool,
+    /// Largeur d'un niveau d'indentation (`indent_size`).
     pub width: usize,
+    /// Largeur d'affichage d'une tabulation (`tab_width`, sinon `indent_size`).
+    pub tab_width: usize,
 }
 
 impl Default for IndentStyle {
@@ -17,6 +20,7 @@ impl Default for IndentStyle {
         Self {
             use_tabs: false,
             width: 4,
+            tab_width: 4,
         }
     }
 }
@@ -42,6 +46,8 @@ pub fn indent_style(path: &Path) -> IndentStyle {
     IndentStyle {
         use_tabs,
         width: width.clamp(1, 16),
+        // Spécification editorconfig : sans `tab_width`, on prend `indent_size`.
+        tab_width: tab_width.unwrap_or(width).clamp(1, 16),
     }
 }
 
@@ -52,7 +58,11 @@ mod tests {
     use std::io::Result;
 
     const fn st(use_tabs: bool, width: usize) -> IndentStyle {
-        IndentStyle { use_tabs, width }
+        IndentStyle {
+            use_tabs,
+            width,
+            tab_width: width,
+        }
     }
 
     /// Écrit `config` comme `.editorconfig` de `dir` et lit le style de `dir/file`.
@@ -66,6 +76,15 @@ mod tests {
         let dir = tempfile::tempdir()?;
         assert_eq!(style(dir.path(), "root = true\n", "a.rs")?, st(false, 4));
         assert_eq!(IndentStyle::default(), st(false, 4));
+        Ok(())
+    }
+
+    #[test]
+    fn tab_width_distinct_de_indent_size() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let cfg = "root = true\n[*]\nindent_style = tab\nindent_size = 2\ntab_width = 8\n";
+        let s = style(dir.path(), cfg, "a.c")?;
+        assert_eq!((s.use_tabs, s.width, s.tab_width), (true, 2, 8));
         Ok(())
     }
 
