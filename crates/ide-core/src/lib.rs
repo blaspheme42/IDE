@@ -7,11 +7,13 @@ mod editor;
 mod explorer;
 mod history;
 mod search;
+mod tabs;
 
 pub use document::{Document, Indent, LineEnding};
 pub use editor::gutter_width;
 pub use explorer::{Explorer, FsChange, FsEntry, Node, Prompt, PromptKind};
 pub use search::Search;
+pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
 
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,12 +157,18 @@ pub struct State {
     pub width: u16,
     pub height: u16,
     pub status: String,
+    /// Document de l'onglet actif.
     pub doc: Document,
+    /// Autres onglets, dans l'ordre d'affichage ; l'actif s'intercale à l'index `active`.
+    pub tabs: Vec<Tab>,
+    pub active: usize,
     /// Première ligne et première colonne d'affichage visibles dans l'éditeur.
     pub scroll_line: usize,
     pub scroll_col: usize,
     /// Ctrl+Q déjà pressé une fois avec des modifications non sauvegardées.
     pub quit_armed: bool,
+    /// Ctrl+W déjà pressé une fois sur un onglet modifié.
+    pub close_armed: bool,
     /// Bouton gauche enfoncé dans la zone de texte : un glisser étend la sélection.
     pub dragging: bool,
     /// Dernière copie faite sans sélection (ligne entière) : elle se colle au-dessus de la ligne courante.
@@ -188,11 +196,13 @@ pub fn search_bar_height(state: &State) -> u16 {
         .map_or(0, |s| if s.replace.is_some() { 2 } else { 1 })
 }
 
-/// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, la barre de recherche et la barre de statut.
+/// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, les barres d'onglets, de recherche et de statut.
 pub fn editor_size(state: &State) -> (u16, u16) {
     (
         state.width.saturating_sub(explorer_width(state)),
-        state.height.saturating_sub(1 + search_bar_height(state)),
+        state
+            .height
+            .saturating_sub(TAB_BAR_HEIGHT + 1 + search_bar_height(state)),
     )
 }
 

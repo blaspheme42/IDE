@@ -2,7 +2,8 @@
 source: crates/ide-ui/src/lib.rs
 expression: backend
 ---
-"┌ EXPLORATEUR ───────────────┐   6  ne 06 abcdefghijklmnopqrstuvwxyz0123456789 x"
+"┌ EXPLORATEUR ───────────────┐ long.txt                                         "
+"│                            │   6  ne 06 abcdefghijklmnopqrstuvwxyz0123456789 x"
 "│                            │   7  ne 07 abcdefghijklmnopqrstuvwxyz0123456789 x"
 "│                            │   8  ne 08 abcdefghijklmnopqrstuvwxyz0123456789 x"
 "│                            │   9  ne 09 abcdefghijklmnopqrstuvwxyz0123456789 x"
@@ -23,6 +24,5 @@ expression: backend
 "│                            │  24  ne 24 abcdefghijklmnopqrstuvwxyz0123456789 x"
 "│                            │  25  ne 25 abcdefghijklmnopqrstuvwxyz0123456789 x"
 "│                            │  26  ne 26 abcdefghijklmnopqrstuvwxyz0123456789 x"
-"│                            │  27  ne 27 abcdefghijklmnopqrstuvwxyz0123456789 x"
-"└────────────────────────────┘  28  ne 28 abcdefghijklmnopqrstuvwxyz0123456789 x"
+"└────────────────────────────┘  27  ne 27 abcdefghijklmnopqrstuvwxyz0123456789 x"
 " long.txt | Prêt                                       Ln 8, Col 1 | LF | UTF-8 "
