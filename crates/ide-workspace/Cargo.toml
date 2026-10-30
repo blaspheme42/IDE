@@ -1,0 +1,11 @@
+[package]
+name = "ide-workspace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ide-core.workspace = true
+
+[lints]
+workspace = true

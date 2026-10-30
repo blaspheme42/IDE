@@ -1,0 +1,11 @@
+[package]
+name = "ide-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Zéro I/O : aucune dépendance terminal, async ou disque ici.
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "ide-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ide"
+path = "src/main.rs"
+
+[dependencies]
+ide-core.workspace = true
+ide-ui.workspace = true
+
+[lints]
+workspace = true
