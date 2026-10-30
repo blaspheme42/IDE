@@ -1,13 +1,17 @@
 //! Binaire de l'IDE : boucle d'événements façon Elm (événement → update → rendu).
 
+mod clipboard;
 mod files;
 
 use std::path::PathBuf;
 
 use anyhow::Context;
-use crossterm::event::{self as ct, EventStream, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self as ct, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+    EnableMouseCapture, EventStream, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 use futures::StreamExt;
-use ide_core::{Command, Event, Key, KeyInput, Modifiers, State};
+use ide_core::{Command, Event, Key, KeyInput, Modifiers, MouseInput, MouseKind, State};
 use tokio::sync::mpsc;
 use tracing_appender::non_blocking::WorkerGuard;
 
@@ -25,16 +29,31 @@ async fn main() -> anyhow::Result<()> {
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         tracing::error!("panic : {info}");
+        disable_mouse_and_paste();
         previous_hook(info);
     }));
     // ratatui::init installe un hook de panic qui restaure le terminal (NF-08).
     let mut terminal = ratatui::init();
+    if let Err(e) = crossterm::execute!(std::io::stdout(), EnableMouseCapture, EnableBracketedPaste)
+    {
+        tracing::warn!("activation souris / collage : {e}");
+    }
     let result = run(&mut terminal, panic_test, file).await;
+    disable_mouse_and_paste();
     ratatui::restore();
     if let Err(e) = &result {
         tracing::error!("sortie sur erreur : {e:#}");
     }
     result
+}
+
+/// Ratatui ne connaît pas la souris : à appeler à la sortie et en cas de panic.
+fn disable_mouse_and_paste() {
+    let _ = crossterm::execute!(
+        std::io::stdout(),
+        DisableMouseCapture,
+        DisableBracketedPaste
+    );
 }
 
 async fn run(
@@ -69,6 +88,7 @@ async fn run(
     // Une seule tâche écrit, dans l'ordre des Ctrl+S : une vieille version ne peut pas écraser une récente.
     let (save_tx, save_rx) = mpsc::unbounded_channel();
     let saver = tokio::spawn(save_worker(save_rx, tx.clone()));
+    let clip = clipboard::spawn(tx.clone());
     let result = async {
         loop {
             // On garde un `tx` pour les sauvegardes, donc `recv` ne finit jamais : on surveille la fin du lecteur.
@@ -81,7 +101,12 @@ async fn run(
             for cmd in ide_core::update(&mut state, ev) {
                 match cmd {
                     Command::Quit => quit = true,
-                    Command::CopyToClipboard(_) | Command::RequestPaste => {}
+                    Command::CopyToClipboard(text) => {
+                        let _ = clip.send(clipboard::Request::Copy(text));
+                    }
+                    Command::RequestPaste => {
+                        let _ = clip.send(clipboard::Request::Paste);
+                    }
                     Command::Save {
                         path,
                         contents,
@@ -171,15 +196,37 @@ fn convert(ev: ct::Event) -> Option<Event> {
                 ct::KeyCode::F(n) => Key::F(n),
                 _ => Key::Other,
             };
-            let mods = Modifiers {
-                ctrl: k.modifiers.contains(KeyModifiers::CONTROL),
-                alt: k.modifiers.contains(KeyModifiers::ALT),
-                shift: k.modifiers.contains(KeyModifiers::SHIFT) || k.code == ct::KeyCode::BackTab,
-            };
+            let mut mods = convert_mods(k.modifiers);
+            mods.shift |= k.code == ct::KeyCode::BackTab;
             Some(Event::Key(KeyInput { key, mods }))
         }
+        ct::Event::Mouse(m) => {
+            let kind = match m.kind {
+                MouseEventKind::Down(MouseButton::Left) => MouseKind::Down,
+                MouseEventKind::Drag(MouseButton::Left) => MouseKind::Drag,
+                MouseEventKind::Up(MouseButton::Left) => MouseKind::Up,
+                MouseEventKind::ScrollUp => MouseKind::ScrollUp,
+                MouseEventKind::ScrollDown => MouseKind::ScrollDown,
+                _ => return None,
+            };
+            Some(Event::Mouse(MouseInput {
+                kind,
+                column: m.column,
+                row: m.row,
+                mods: convert_mods(m.modifiers),
+            }))
+        }
+        ct::Event::Paste(s) => Some(Event::Paste(s)),
         ct::Event::Resize(width, height) => Some(Event::Resize { width, height }),
         _ => None,
+    }
+}
+
+fn convert_mods(m: KeyModifiers) -> Modifiers {
+    Modifiers {
+        ctrl: m.contains(KeyModifiers::CONTROL),
+        alt: m.contains(KeyModifiers::ALT),
+        shift: m.contains(KeyModifiers::SHIFT),
     }
 }
 
@@ -210,7 +257,7 @@ fn init_logging() -> anyhow::Result<WorkerGuard> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, MouseEvent};
 
     fn key(code: KeyCode, mods: KeyModifiers) -> ct::Event {
         ct::Event::Key(KeyEvent::new(code, mods))
@@ -325,5 +372,69 @@ mod tests {
                 height: 40
             })
         );
+    }
+
+    fn souris(kind: MouseEventKind, mods: KeyModifiers) -> ct::Event {
+        ct::Event::Mouse(MouseEvent {
+            kind,
+            column: 7,
+            row: 3,
+            modifiers: mods,
+        })
+    }
+
+    fn mouse(kind: MouseKind, mods: Modifiers) -> Option<Event> {
+        Some(Event::Mouse(MouseInput {
+            kind,
+            column: 7,
+            row: 3,
+            mods,
+        }))
+    }
+
+    #[test]
+    fn collage_terminal() {
+        assert_eq!(
+            convert(ct::Event::Paste("a\nb".into())),
+            Some(Event::Paste("a\nb".into()))
+        );
+    }
+
+    #[test]
+    fn clic_glisser_relacher_molette() {
+        let none = Modifiers::default();
+        for (k, attendu) in [
+            (MouseEventKind::Down(MouseButton::Left), MouseKind::Down),
+            (MouseEventKind::Drag(MouseButton::Left), MouseKind::Drag),
+            (MouseEventKind::Up(MouseButton::Left), MouseKind::Up),
+            (MouseEventKind::ScrollUp, MouseKind::ScrollUp),
+            (MouseEventKind::ScrollDown, MouseKind::ScrollDown),
+        ] {
+            assert_eq!(convert(souris(k, KeyModifiers::NONE)), mouse(attendu, none));
+        }
+        let shift = Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            convert(souris(
+                MouseEventKind::Down(MouseButton::Left),
+                KeyModifiers::SHIFT
+            )),
+            mouse(MouseKind::Down, shift)
+        );
+    }
+
+    #[test]
+    fn autres_boutons_et_mouvement_ignores() {
+        for k in [
+            MouseEventKind::Down(MouseButton::Right),
+            MouseEventKind::Drag(MouseButton::Middle),
+            MouseEventKind::Up(MouseButton::Right),
+            MouseEventKind::Moved,
+            MouseEventKind::ScrollLeft,
+        ] {
+            assert_eq!(convert(souris(k, KeyModifiers::NONE)), None);
+        }
     }
 }

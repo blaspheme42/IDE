@@ -30,6 +30,7 @@ unicode-width = "0.2"
 tempfile = "3"
 ec4rs = "1.2"
 proptest = "1"
+arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
