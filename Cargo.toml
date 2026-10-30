@@ -28,6 +28,7 @@ ropey = "1.6"
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 tempfile = "3"
+ec4rs = "1.2"
 proptest = "1"
 
 [workspace.lints.rust]
