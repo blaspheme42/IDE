@@ -159,7 +159,8 @@ fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
     match k.key {
         Key::Char(c) if !c.is_control() => doc.insert_char(c),
         Key::Enter => doc.insert_newline(),
-        Key::Tab => doc.insert_str("    "),
+        Key::Tab if ext => doc.untab(),
+        Key::Tab => doc.tab(),
         Key::Backspace => doc.backspace(),
         Key::Delete => doc.delete(),
         Key::Left => doc.move_left(ext),
@@ -239,7 +240,7 @@ mod tests {
             cmds,
             vec![Command::Save {
                 path: PathBuf::from("/x/a.txt"),
-                contents: "abc    \r\n".into(),
+                contents: "abc \r\n".into(),
                 version: 2,
             }]
         );
@@ -376,7 +377,12 @@ mod tests {
         update(&mut s, ctrl('a'));
         assert_eq!(s.doc.selection(), Some(0..6));
         update(&mut s, k(Key::Tab));
-        assert_eq!(texte(&s), "    ");
+        assert_eq!(texte(&s), "    xc\n    def");
+        assert_eq!(s.doc.selection(), Some(0..14));
+        update(&mut s, avec(Key::Tab, false, true));
+        assert_eq!(texte(&s), "xc\ndef");
+        update(&mut s, k(Key::Char(' ')));
+        assert_eq!(texte(&s), " ");
         update(&mut s, avec(Key::Home, false, true));
         update(&mut s, k(Key::Delete));
         assert_eq!(texte(&s), "");
