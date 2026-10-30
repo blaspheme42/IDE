@@ -1,0 +1,14 @@
+---
+source: crates/ide-ui/src/explorer.rs
+expression: b
+---
+"┌ IDE ───────────────────────┐"
+"│ src                       │"
+"│   ui                      │"
+"│     thème_🦀.rs           │" Hidden by multi-width symbols: [(14, " ")]
+"│   main.rs                 │"
+"│ target …                  │"
+"│ un_nom_de_fichier_vraimen…│"
+"│ Cargo.toml                │"
+"│Nouveau fichier : ichier.rs │"
+"└────────────────────────────┘"

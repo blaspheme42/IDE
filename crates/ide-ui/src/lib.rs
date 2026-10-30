@@ -138,7 +138,8 @@ pub fn render(state: &State, frame: &mut Frame) {
 
     if let Some(s) = &state.search {
         search_bar(s, bar, frame);
-    } else if (state.scroll_line..state.scroll_line + text.height as usize).contains(&cur_line)
+    } else if state.focus == ide_core::Focus::Editor
+        && (state.scroll_line..state.scroll_line + text.height as usize).contains(&cur_line)
         && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_col)
     {
         frame.set_cursor_position(Position::new(
