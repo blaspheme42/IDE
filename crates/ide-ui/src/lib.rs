@@ -1,5 +1,7 @@
 //! Crate ide-ui : widgets ratatui.
 
+pub mod icons;
+
 use ide_core::{EXPLORER_WIDTH, GUTTER_WIDTH, LineEnding, Search, State, search_bar_height};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
