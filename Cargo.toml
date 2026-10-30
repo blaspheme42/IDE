@@ -32,6 +32,8 @@ ec4rs = "1.2"
 regex = "1"
 proptest = "1"
 arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
+ignore = "0.4"
+trash = { version = "5.2", default-features = false, features = ["chrono"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

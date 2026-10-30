@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 ide-core.workspace = true
 ec4rs.workspace = true
+ignore.workspace = true
+trash.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
