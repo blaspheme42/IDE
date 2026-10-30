@@ -2,7 +2,7 @@
 
 use crate::{
     Command, Document, EXPLORER_WIDTH, Event, Key, KeyInput, MouseInput, MouseKind, State,
-    editor_size,
+    editor_size, search,
 };
 
 /// Colonnes réservées par l'UI aux numéros de ligne, à gauche du texte.
@@ -14,10 +14,15 @@ const WHEEL_LINES: usize = 3;
 pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite.
     let wheel = matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown));
+    let version = state.doc.version();
     let cmds = match event {
         Event::Key(k) => key(state, k),
         Event::Mouse(m) => {
             mouse(state, m);
+            vec![]
+        }
+        Event::Paste(text) if state.search.is_some() => {
+            search::input(state, text.lines().next().unwrap_or_default());
             vec![]
         }
         Event::Paste(text) => {
@@ -53,6 +58,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
     };
+    // Annuler, couper, remplacer… : les occurrences ont bougé.
+    if state.search.is_some() && state.doc.version() != version {
+        search::refresh(state, false);
+    }
     if !wheel {
         scroll_to_cursor(state);
     }
@@ -104,6 +113,9 @@ fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
         state.quit_armed = false;
         state.status.clear();
     }
+    if search::key(state, k) {
+        return vec![];
+    }
     let page = usize::from(editor_size(state).1).max(1);
     let doc = &mut state.doc;
     if k.mods.ctrl && !k.mods.alt {
@@ -147,6 +159,8 @@ fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
                 return vec![Command::CopyToClipboard(text)];
             }
             Key::Char('v' | 'V') => return vec![Command::RequestPaste],
+            Key::Char('f' | 'F') => search::open(state, false),
+            Key::Char('h' | 'H') => search::open(state, true),
             _ => state.status = k.to_string(),
         }
         return vec![];
