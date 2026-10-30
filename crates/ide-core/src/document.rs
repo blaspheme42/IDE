@@ -9,9 +9,6 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::history::{Change, Entry, History, Kind};
 
-/// Largeur d'une tabulation (tab stops tous les 4).
-const TAB_WIDTH: usize = 4;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LineEnding {
     #[default]
@@ -91,10 +88,10 @@ fn grapheme_bounds(s: &str) -> Vec<usize> {
     bounds
 }
 
-/// Colonne d'affichage atteinte après le graphème `g` placé à la colonne `col`.
-fn advance(col: usize, g: &str) -> usize {
+/// Colonne d'affichage atteinte après le graphème `g` placé à la colonne `col` (taquets tous les `tab`).
+fn advance(col: usize, g: &str, tab: usize) -> usize {
     if g == "\t" {
-        (col / TAB_WIDTH + 1) * TAB_WIDTH
+        (col / tab + 1) * tab
     } else {
         col + g.width()
     }
@@ -177,9 +174,19 @@ impl Document {
             .to_string()
     }
 
+    /// Largeur d'affichage d'une tabulation : `width` (tab_width de .editorconfig) si indentation par tabs, sinon 4.
+    pub fn tab_width(&self) -> usize {
+        if self.indent.use_tabs {
+            self.indent.width.max(1)
+        } else {
+            4
+        }
+    }
+
     /// Colonne d'affichage de l'index de `char` `char_col` dans la ligne `line`.
     pub fn display_col(&self, line: usize, char_col: usize) -> usize {
         let text = self.line_text(line);
+        let tab = self.tab_width();
         let mut col = 0;
         let mut chars = 0;
         for g in text.graphemes(true) {
@@ -187,7 +194,7 @@ impl Document {
             if chars > char_col {
                 break;
             }
-            col = advance(col, g);
+            col = advance(col, g, tab);
         }
         col
     }
@@ -212,10 +219,11 @@ impl Document {
 
     /// Index de `char` (relatif à la ligne) le plus à droite dont la colonne d'affichage ≤ `target`.
     fn char_col_for_display(&self, line: usize, target: usize) -> usize {
+        let tab = self.tab_width();
         let mut col = 0;
         let mut chars = 0;
         for g in self.line_text(line).graphemes(true) {
-            let next = advance(col, g);
+            let next = advance(col, g, tab);
             if next > target {
                 break;
             }
@@ -660,6 +668,21 @@ mod tests {
         assert_eq!(d.display_col(0, 5), 7);
         let d = doc("\tx");
         assert_eq!(d.display_col(0, 1), 4);
+    }
+
+    #[test]
+    fn largeur_tabulation_editorconfig() {
+        let mut d = doc("a\tb\tc");
+        d.indent = Indent {
+            use_tabs: true,
+            width: 8,
+        };
+        assert_eq!(d.display_col(0, 2), 8);
+        assert_eq!(d.display_col(0, 4), 16);
+        assert_eq!(d.pos_at(0, 9), 3); // clic juste après « b » → après b
+        // Indentation par espaces : tabulation affichée sur 4, quelle que soit la largeur.
+        d.indent.use_tabs = false;
+        assert_eq!(d.display_col(0, 2), 4);
     }
 
     #[test]
