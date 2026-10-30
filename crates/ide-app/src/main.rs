@@ -21,11 +21,15 @@ async fn main() -> anyhow::Result<()> {
     let _log_guard = init_logging()?;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let panic_test = args.iter().any(|a| a == "--panic-test");
-    // `ide [FICHIER]` : premier argument qui n'est pas une option.
-    let file = args
+    // `ide [dossier|fichier]` : premier argument qui n'est pas une option.
+    let arg = args
         .into_iter()
         .find(|a| !a.starts_with("--"))
         .map(PathBuf::from);
+    let cwd = std::env::current_dir()
+        .and_then(|d| d.canonicalize())
+        .context("dossier courant inaccessible")?;
+    let (root, file) = workspace::choose_root(arg.as_deref(), &cwd);
     // Trace les panics dans le log ; ratatui::init chaîne ce hook après la restauration.
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -39,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
     {
         tracing::warn!("activation souris / collage : {e}");
     }
-    let result = run(&mut terminal, panic_test, file).await;
+    let result = run(&mut terminal, panic_test, root, file).await;
     disable_mouse_and_paste();
     ratatui::restore();
     if let Err(e) = &result {
@@ -60,6 +64,7 @@ fn disable_mouse_and_paste() {
 async fn run(
     terminal: &mut ratatui::DefaultTerminal,
     panic_test: bool,
+    root: PathBuf,
     file: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let size = terminal.size()?;
@@ -70,29 +75,13 @@ async fn run(
     };
 
     let (tx, mut rx) = mpsc::channel::<Event>(256);
+    // Racine d'abord : l'arbre se charge pendant la lecture du fichier.
+    tx.send(Event::OpenRoot(root)).await?;
     // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
     if let Some(path) = file {
-        let p = path.clone();
-        let (read, style) = tokio::task::spawn_blocking(move || {
-            (files::read_file(&p), ide_workspace::indent_style(&p))
-        })
-        .await?;
-        let ev = match read {
-            Ok(text) => Event::FileOpened { path, text },
-            Err(error) => Event::OpenFailed {
-                create: error == files::NEW_FILE,
-                path,
-                error,
-            },
-        };
-        tx.send(ev).await?;
-        // Après l'ouverture, qui remet le document à zéro.
-        tx.send(Event::IndentDetected(ide_core::Indent {
-            use_tabs: style.use_tabs,
-            width: style.width,
-            tab_width: style.tab_width,
-        }))
-        .await?;
+        for ev in tokio::task::spawn_blocking(move || workspace::open_file(path)).await? {
+            tx.send(ev).await?;
+        }
     }
     let mut reader = tokio::spawn(read_terminal_events(tx.clone()));
 

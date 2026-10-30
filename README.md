@@ -31,7 +31,7 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 
 ## Utilisation
 
-- `ide <fichier>` : ouvrir un fichier (créé à la première sauvegarde s'il n'existe pas).
+- `ide [dossier|fichier]` : sans argument, l'explorateur s'ouvre sur le dossier courant ; avec un dossier, sur ce dossier ; avec un fichier, l'ouvre (créé à la première sauvegarde s'il n'existe pas) avec pour racine le dossier courant s'il le contient, sinon le dossier du fichier.
 - `Ctrl+S` : sauvegarder.
 - Flèches, `Début`/`Fin`, `Page préc.`/`Page suiv.` : se déplacer ; avec `Shift`, sélectionner. `Ctrl+A` : tout sélectionner.
 - Souris : clic pour placer le curseur, glisser ou `Shift+clic` pour sélectionner, molette pour défiler. La sélection native du terminal reste possible avec `Shift`+glisser (selon le terminal).
