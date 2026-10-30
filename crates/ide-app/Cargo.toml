@@ -2,6 +2,7 @@
 name = "ide-app"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
@@ -11,6 +12,14 @@ path = "src/main.rs"
 [dependencies]
 ide-core.workspace = true
 ide-ui.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+futures.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
 
 [lints]
 workspace = true
