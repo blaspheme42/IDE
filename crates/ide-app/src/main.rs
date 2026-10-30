@@ -66,35 +66,53 @@ async fn run(
         panic!("--panic-test : panic volontaire après le premier rendu");
     }
 
-    loop {
-        // On garde un `tx` pour les sauvegardes, donc `recv` ne finit jamais : on surveille la fin du lecteur.
-        let ev = tokio::select! {
-            biased;
-            Some(ev) = rx.recv() => ev,
-            _ = &mut reader => break,
-        };
-        let mut quit = false;
-        for cmd in ide_core::update(&mut state, ev) {
-            match cmd {
-                Command::Quit => quit = true,
-                Command::Save {
-                    path,
-                    contents,
-                    version,
-                } => spawn_save(tx.clone(), path, contents, version),
+    // Une seule tâche écrit, dans l'ordre des Ctrl+S : une vieille version ne peut pas écraser une récente.
+    let (save_tx, save_rx) = mpsc::unbounded_channel();
+    let saver = tokio::spawn(save_worker(save_rx, tx.clone()));
+    let result = async {
+        loop {
+            // On garde un `tx` pour les sauvegardes, donc `recv` ne finit jamais : on surveille la fin du lecteur.
+            let ev = tokio::select! {
+                biased;
+                Some(ev) = rx.recv() => ev,
+                _ = &mut reader => break,
+            };
+            let mut quit = false;
+            for cmd in ide_core::update(&mut state, ev) {
+                match cmd {
+                    Command::Quit => quit = true,
+                    Command::Save {
+                        path,
+                        contents,
+                        version,
+                    } => {
+                        let _ = save_tx.send((path, contents, version));
+                    }
+                }
             }
+            if quit {
+                break;
+            }
+            terminal.draw(|f| ide_ui::render(&state, f))?;
         }
-        if quit {
-            break;
-        }
-        terminal.draw(|f| ide_ui::render(&state, f))?;
+        anyhow::Ok(())
     }
-    Ok(())
+    .await;
+    // Avant de quitter, on laisse finir les sauvegardes en attente ; sans `rx`, leurs événements sont ignorés.
+    drop(rx);
+    drop(save_tx);
+    if let Err(e) = saver.await {
+        tracing::error!("tâche de sauvegarde : {e}");
+    }
+    result
 }
 
-/// Sauvegarde hors de la boucle (NF-05) ; le résultat revient comme un événement.
-fn spawn_save(tx: mpsc::Sender<Event>, path: PathBuf, contents: String, version: u64) {
-    tokio::spawn(async move {
+/// Sauvegardes hors de la boucle (NF-05), une à la fois ; chaque résultat revient comme un événement.
+async fn save_worker(
+    mut jobs: mpsc::UnboundedReceiver<(PathBuf, String, u64)>,
+    tx: mpsc::Sender<Event>,
+) {
+    while let Some((path, contents, version)) = jobs.recv().await {
         let p = path.clone();
         let res = tokio::task::spawn_blocking(move || files::save_atomic(&p, &contents))
             .await
@@ -108,7 +126,7 @@ fn spawn_save(tx: mpsc::Sender<Event>, path: PathBuf, contents: String, version:
             },
         };
         let _ = tx.send(ev).await;
-    });
+    }
 }
 
 async fn read_terminal_events(tx: mpsc::Sender<Event>) {
@@ -199,6 +217,31 @@ mod tests {
 
     fn input(key: Key, mods: Modifiers) -> Option<Event> {
         Some(Event::Key(KeyInput { key, mods }))
+    }
+
+    #[tokio::test]
+    async fn sauvegardes_ecrites_dans_l_ordre() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let p = dir.path().join("a.txt");
+        let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(32);
+        for v in 1..=20u64 {
+            jobs_tx.send((p.clone(), "x".repeat(20_000 / v as usize), v))?;
+        }
+        drop(jobs_tx);
+        save_worker(jobs_rx, tx).await;
+        for v in 1..=20u64 {
+            assert_eq!(
+                rx.recv().await,
+                Some(Event::Saved {
+                    path: p.clone(),
+                    version: v
+                })
+            );
+        }
+        // La dernière demande (la plus courte) gagne, même si les premières sont plus longues à écrire.
+        assert_eq!(std::fs::read_to_string(&p)?, "x".repeat(1_000));
+        Ok(())
     }
 
     #[test]
