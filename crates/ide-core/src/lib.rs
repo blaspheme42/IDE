@@ -6,7 +6,7 @@ pub mod document;
 mod editor;
 mod history;
 
-pub use document::{Document, LineEnding};
+pub use document::{Document, Indent, LineEnding};
 pub use editor::GUTTER_WIDTH;
 
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).

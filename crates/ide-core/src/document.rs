@@ -19,12 +19,55 @@ pub enum LineEnding {
     CrLf,
 }
 
+/// Style d'indentation (F-14), fourni par l'app depuis `.editorconfig`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Indent {
+    pub use_tabs: bool,
+    pub width: usize,
+}
+
+impl Default for Indent {
+    fn default() -> Self {
+        Self {
+            use_tabs: false,
+            width: 4,
+        }
+    }
+}
+
+impl Indent {
+    /// Un niveau d'indentation.
+    fn unit(self) -> String {
+        if self.use_tabs {
+            "\t".into()
+        } else {
+            " ".repeat(self.width.max(1))
+        }
+    }
+}
+
+/// Position après les éditions triées `edits` ; `right` : une insertion pile sur `pos` le pousse.
+fn map_pos(pos: usize, edits: &[(Range<usize>, String)], right: bool) -> usize {
+    let mut delta = 0isize;
+    for (r, s) in edits {
+        if r.end < pos || (r.end == pos && (r.start < r.end || right)) {
+            delta += s.chars().count() as isize - r.len() as isize;
+        } else if r.start < pos {
+            return r.start.saturating_add_signed(delta);
+        } else {
+            break;
+        }
+    }
+    pos.saturating_add_signed(delta)
+}
+
 /// Le texte est stocké en interne avec des `\n` seuls ; `line_ending` est réappliqué à la sauvegarde.
 #[derive(Debug, Default)]
 pub struct Document {
     rope: Rope,
     pub path: Option<PathBuf>,
     pub line_ending: LineEnding,
+    pub indent: Indent,
     /// Index de `char` du curseur dans la rope.
     cursor: usize,
     /// Colonne d'affichage voulue pour les déplacements verticaux.
@@ -218,32 +261,137 @@ impl Document {
     }
 
     fn apply(&mut self, range: Range<usize>, text: &str, kind: Kind) {
-        let start = range.start.min(self.rope.len_chars());
-        let end = range.end.clamp(start, self.rope.len_chars());
-        if start == end && text.is_empty() {
-            return;
+        self.apply_many(vec![(range, text.into())], kind);
+    }
+
+    /// Plusieurs remplacements disjoints (positions d'avant édition) en une seule entrée d'historique,
+    /// appliqués de la fin vers le début ; curseur après le premier texte inséré.
+    pub fn edit_many(&mut self, edits: Vec<(Range<usize>, String)>) {
+        self.apply_many(edits, Kind::Other);
+    }
+
+    /// `false` si rien n'a changé (aucune entrée d'historique).
+    fn apply_many(&mut self, mut edits: Vec<(Range<usize>, String)>, kind: Kind) -> bool {
+        let len = self.rope.len_chars();
+        for (r, _) in &mut edits {
+            r.start = r.start.min(len);
+            r.end = r.end.clamp(r.start, len);
         }
+        edits.retain(|(r, s)| !r.is_empty() || !s.is_empty());
+        if edits.is_empty() {
+            return false;
+        }
+        edits.sort_by_key(|e| std::cmp::Reverse(e.0.start));
         let before = (self.cursor, self.anchor);
-        let removed = self.rope.slice(start..end).to_string();
-        self.rope.remove(start..end);
-        self.rope.insert(start, text);
-        self.cursor = start + text.chars().count();
+        let mut changes = Vec::with_capacity(edits.len());
+        for (r, text) in edits {
+            let removed = self.rope.slice(r.clone()).to_string();
+            self.rope.remove(r.clone());
+            self.rope.insert(r.start, &text);
+            self.cursor = r.start + text.chars().count();
+            changes.push(Change {
+                pos: r.start,
+                removed,
+                inserted: text,
+            });
+        }
         self.anchor = None;
         self.preferred_col = None;
         let version_before = self.version;
         self.version = self.history.next_id();
         self.history.record(Entry {
-            changes: vec![Change {
-                pos: start,
-                removed,
-                inserted: text.into(),
-            }],
+            changes,
             kind,
             before,
             after: (self.cursor, None),
             version_before,
             version_after: self.version,
         });
+        true
+    }
+
+    /// Place curseur et ancre après une édition ; c'est aussi l'état restauré par « rétablir ».
+    fn place_after_edit(&mut self, cursor: usize, anchor: Option<usize>) {
+        (self.cursor, self.anchor) = (cursor, anchor);
+        if let Some(e) = self.history.undo.last_mut() {
+            e.after = (cursor, anchor);
+        }
+    }
+
+    /// Début de ligne et texte de la ligne avant `pos`.
+    fn line_before(&self, pos: usize) -> (usize, String) {
+        let start = self.rope.line_to_char(self.rope.char_to_line(pos));
+        (start, self.rope.slice(start..pos).to_string())
+    }
+
+    /// Lignes touchées par la sélection (ou la ligne du curseur) ; une fin de sélection
+    /// en colonne 0 n'inclut pas sa ligne.
+    fn selected_lines(&self) -> Range<usize> {
+        let r = self.selection().unwrap_or(self.cursor..self.cursor);
+        let first = self.rope.char_to_line(r.start);
+        let mut last = self.rope.char_to_line(r.end);
+        if last > first && self.rope.line_to_char(last) == r.end {
+            last -= 1;
+        }
+        first..last + 1
+    }
+
+    /// Tab : indente les lignes d'une sélection multi-ligne, sinon insère une tabulation
+    /// ou des espaces jusqu'au prochain taquet.
+    pub fn tab(&mut self) {
+        let multi = self
+            .selection()
+            .is_some_and(|r| self.rope.char_to_line(r.start) != self.rope.char_to_line(r.end));
+        if multi {
+            let unit = self.indent.unit();
+            let edits = self
+                .selected_lines()
+                .filter(|&l| self.line_len(l) > 0)
+                .map(|l| {
+                    let p = self.rope.line_to_char(l);
+                    (p..p, unit.clone())
+                })
+                .collect();
+            return self.reindent(edits);
+        }
+        let text = if self.indent.use_tabs {
+            "\t".into()
+        } else {
+            let w = self.indent.width.max(1);
+            " ".repeat(w - self.cursor_line_col().1 % w)
+        };
+        let (r, kind) = self.target();
+        self.apply(r, &text, kind);
+    }
+
+    /// Shift+Tab : retire une tabulation ou jusqu'à `width` espaces en tête de chaque ligne touchée.
+    pub fn untab(&mut self) {
+        let w = self.indent.width.max(1);
+        let edits = self
+            .selected_lines()
+            .filter_map(|l| {
+                let p = self.rope.line_to_char(l);
+                let line = self.rope.line(l);
+                let n = if line.get_char(0) == Some('\t') {
+                    1
+                } else {
+                    line.chars().take(w).take_while(|&c| c == ' ').count()
+                };
+                (n > 0).then(|| (p..p + n, String::new()))
+            })
+            .collect();
+        self.reindent(edits);
+    }
+
+    /// Applique `edits` (triées) en une entrée et reporte curseur et ancre.
+    fn reindent(&mut self, edits: Vec<(Range<usize>, String)>) {
+        let (c, a) = (self.cursor, self.anchor);
+        let hi = c.max(a.unwrap_or(c));
+        let map = |p: usize| map_pos(p, &edits, p == hi && a.is_some_and(|a| a != c));
+        let (c, a) = (map(c), a.map(map));
+        if self.apply_many(edits, Kind::Other) {
+            self.place_after_edit(c, a);
+        }
     }
 
     /// Plage remplacée par une frappe : la sélection, sinon le curseur.
@@ -259,9 +407,38 @@ impl Document {
         self.apply(r, c.encode_utf8(&mut [0; 4]), kind);
     }
 
-    /// Insère `\n` (pas d'auto-indentation en J1a).
+    /// Entrée : reprend l'indentation de tête, un niveau de plus après `{ [ ( :`,
+    /// et entre `{}` `[]` `()` renvoie la fermante sur sa propre ligne.
     pub fn insert_newline(&mut self) {
-        self.insert_char('\n');
+        let (r, _) = self.target();
+        let (start, before) = self.line_before(r.start);
+        let indent: String = before
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect();
+        let opener = before.trim_end().chars().last();
+        let mut text = format!("\n{indent}");
+        let mut cursor = None;
+        if matches!(opener, Some('{' | '[' | '(' | ':')) {
+            text += &self.indent.unit();
+            if matches!(
+                (opener, self.rope.get_char(r.end)),
+                (Some('{'), Some('}')) | (Some('['), Some(']')) | (Some('('), Some(')'))
+            ) {
+                cursor = Some(text.chars().count());
+                text += &format!("\n{indent}");
+            }
+        }
+        // Ligne quittée faite seulement d'indentation : on la vide.
+        let from = if before.trim().is_empty() {
+            start
+        } else {
+            r.start
+        };
+        self.apply(from..r.end, &text, Kind::Other);
+        if let Some(n) = cursor {
+            self.place_after_edit(from + n, None);
+        }
     }
 
     /// Insère du texte (collage) en une seule entrée d'historique ; `\r\n` et `\r` deviennent `\n`.
@@ -275,11 +452,18 @@ impl Document {
     pub fn backspace(&mut self) {
         match self.selection() {
             Some(r) => self.apply(r, "", Kind::Other),
-            None => self.apply(
-                self.prev_boundary(self.cursor)..self.cursor,
-                "",
-                Kind::Backspace,
-            ),
+            None => {
+                let (start, before) = self.line_before(self.cursor);
+                let n = before.chars().count();
+                // Dans une indentation d'espaces : jusqu'au taquet précédent.
+                let from = if n > 0 && before.chars().all(|c| c == ' ') {
+                    let w = self.indent.width.max(1);
+                    start + (n - 1) / w * w
+                } else {
+                    self.prev_boundary(self.cursor)
+                };
+                self.apply(from..self.cursor, "", Kind::Backspace);
+            }
         }
     }
 
@@ -719,6 +903,8 @@ mod tests {
         Home(bool),
         End(bool),
         Edit(usize, usize, String),
+        Tab(bool),
+        Newline,
     }
 
     fn ed() -> impl Strategy<Value = Ed> {
@@ -734,6 +920,8 @@ mod tests {
             any::<bool>().prop_map(Ed::Home),
             any::<bool>().prop_map(Ed::End),
             (0usize..100, 0usize..100, s).prop_map(|(a, b, t)| Ed::Edit(a, b, t)),
+            any::<bool>().prop_map(Ed::Tab),
+            Just(Ed::Newline),
         ]
     }
 
@@ -754,6 +942,9 @@ mod tests {
                     Ed::Home(e) => d.move_line_start(e),
                     Ed::End(e) => d.move_line_end(e),
                     Ed::Edit(a, b, s) => d.edit((a % n).min(b % n)..(a % n).max(b % n), &s),
+                    Ed::Tab(true) => d.untab(),
+                    Ed::Tab(false) => d.tab(),
+                    Ed::Newline => d.insert_newline(),
                 }
                 prop_assert!(d.cursor() <= d.rope().len_chars());
             }
@@ -766,5 +957,132 @@ mod tests {
             prop_assert_eq!(texte(&d), fin);
             prop_assert_eq!(d.version(), version);
         }
+    }
+
+    fn avec_indent(text: &str, use_tabs: bool, width: usize) -> Document {
+        let mut d = doc(text);
+        d.indent = Indent { use_tabs, width };
+        d
+    }
+
+    #[test]
+    fn tab_espaces_aux_taquets() {
+        let mut d = doc("a");
+        d.move_line_end(false);
+        d.tab();
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("a   ", 4));
+        d.tab();
+        assert_eq!(texte(&d), format!("a{}", " ".repeat(7)));
+        let mut d = avec_indent("abc", false, 2);
+        d.move_line_end(false);
+        d.tab();
+        assert_eq!(texte(&d), "abc ");
+        let mut d = avec_indent("ab", true, 4);
+        d.move_right(false);
+        d.tab();
+        assert_eq!(texte(&d), "a\tb");
+    }
+
+    #[test]
+    fn tab_multiligne_et_undo_unique() {
+        let mut d = doc("a\n\nb\nc");
+        d.move_right(false);
+        d.move_down(2, true); // de "a|" à "b|" : lignes 0 à 2
+        d.tab();
+        assert_eq!(texte(&d), "    a\n\n    b\nc");
+        assert_eq!(d.selection(), Some(5..12));
+        assert!(d.undo());
+        assert_eq!(
+            (texte(&d).as_str(), d.selection()),
+            ("a\n\nb\nc", Some(1..4))
+        );
+        assert!(!d.undo());
+        assert!(d.redo());
+        assert_eq!(d.selection(), Some(5..12));
+        // Fin de sélection en colonne 0 : sa ligne n'est pas indentée.
+        let mut d = avec_indent("a\nb\nc", true, 4);
+        d.move_down(1, true);
+        d.tab();
+        assert_eq!(texte(&d), "\ta\nb\nc");
+        assert_eq!(d.selection(), Some(0..3));
+    }
+
+    #[test]
+    fn shift_tab_desindente() {
+        let mut d = doc("  a\n\tb\n      c");
+        d.select_all();
+        d.untab();
+        assert_eq!(texte(&d), "a\nb\n  c");
+        assert_eq!(d.selection(), Some(0..7));
+        assert!(d.undo());
+        assert_eq!(texte(&d), "  a\n\tb\n      c");
+        assert!(!d.undo());
+        // Sans sélection : ligne du curseur, curseur suivi.
+        let mut d = avec_indent("    x", false, 2);
+        d.move_line_end(false);
+        d.untab();
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("  x", 3));
+        d.move_line_start(false);
+        d.untab();
+        d.untab();
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("x", 0));
+    }
+
+    #[test]
+    fn entree_indentation() {
+        // Indentation copiée, seulement la portion avant le curseur.
+        let mut d = doc("  ab");
+        d.set_cursor(3, false);
+        d.insert_newline();
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("  a\n  b", 6));
+        // Après `{` en fin de ligne : un niveau de plus.
+        let mut d = doc("\tif x {");
+        d.move_line_end(false);
+        d.insert_newline();
+        assert_eq!(texte(&d), "\tif x {\n\t    ");
+        // Entre `{}` : fermante sur sa ligne, une seule entrée d'historique.
+        let mut d = avec_indent("  f(){}", false, 2);
+        d.set_cursor(6, false);
+        d.insert_newline();
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("  f(){\n    \n  }", 11));
+        assert!(d.undo());
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("  f(){}", 6));
+        assert!(d.redo());
+        assert_eq!(d.cursor(), 11);
+        // `:` (Python), et ligne d'espaces quittée : vidée.
+        let mut d = doc("def f():");
+        d.move_line_end(false);
+        d.insert_newline();
+        d.insert_newline();
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("def f():\n\n    ", 14));
+    }
+
+    #[test]
+    fn backspace_au_taquet() {
+        let mut d = doc("      x");
+        d.set_cursor(6, false);
+        d.backspace();
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("    x", 4));
+        d.backspace();
+        assert_eq!(texte(&d), "x");
+        let mut d = avec_indent("   ", false, 2);
+        d.move_line_end(false);
+        d.backspace();
+        assert_eq!(texte(&d), "  ");
+        // Hors indentation : un graphème.
+        let mut d = doc("a   ");
+        d.move_line_end(false);
+        d.backspace();
+        assert_eq!(texte(&d), "a  ");
+    }
+
+    #[test]
+    fn edit_many_une_entree() {
+        let mut d = doc("abc");
+        d.edit_many(vec![(2..3, "Z".into()), (0..1, "XY".into())]);
+        assert_eq!((texte(&d).as_str(), d.cursor()), ("XYbZ", 2));
+        assert!(d.undo());
+        assert_eq!(texte(&d), "abc");
+        assert!(!d.undo());
     }
 }
