@@ -1,13 +1,29 @@
 //! Traduction des événements en actions sur l'état (clavier, fichiers, défilement).
 
-use crate::{Command, Document, Event, Key, KeyInput, State, editor_size};
+use crate::{
+    Command, Document, EXPLORER_WIDTH, Event, Key, KeyInput, MouseInput, MouseKind, State,
+    editor_size,
+};
 
 /// Colonnes réservées par l'UI aux numéros de ligne, à gauche du texte.
 pub const GUTTER_WIDTH: u16 = 6;
 
+/// Lignes défilées par cran de molette.
+const WHEEL_LINES: usize = 3;
+
 pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
+    // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite.
+    let wheel = matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown));
     let cmds = match event {
         Event::Key(k) => key(state, k),
+        Event::Mouse(m) => {
+            mouse(state, m);
+            vec![]
+        }
+        Event::Paste(text) => {
+            state.doc.insert_str(&text);
+            vec![]
+        }
         Event::Resize { width, height } => {
             state.width = width;
             state.height = height;
@@ -37,8 +53,49 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
     };
-    scroll_to_cursor(state);
+    if !wheel {
+        scroll_to_cursor(state);
+    }
     cmds
+}
+
+fn mouse(state: &mut State, m: MouseInput) {
+    let last = state.doc.rope().len_lines() - 1;
+    let left = EXPLORER_WIDTH + GUTTER_WIDTH;
+    match m.kind {
+        MouseKind::ScrollUp => state.scroll_line = state.scroll_line.saturating_sub(WHEEL_LINES),
+        MouseKind::ScrollDown => state.scroll_line = (state.scroll_line + WHEEL_LINES).min(last),
+        MouseKind::Up => {}
+        // Un clic hors de la zone de texte est ignoré ; un glisser peut en sortir.
+        MouseKind::Down if m.column < left || m.row >= editor_size(state).1 => {}
+        MouseKind::Down | MouseKind::Drag => {
+            let line = state.scroll_line + usize::from(m.row);
+            let col = state.scroll_col + usize::from(m.column.saturating_sub(left));
+            let pos = state.doc.pos_at(line, col);
+            let extend = m.kind == MouseKind::Drag || m.mods.shift;
+            state.doc.set_cursor(pos, extend);
+        }
+    }
+}
+
+/// Texte copié : la sélection, sinon la ligne courante avec son `\n` (comme VSCode).
+fn copied(doc: &Document) -> (std::ops::Range<usize>, String) {
+    if let Some(r) = doc.selection() {
+        return (r.clone(), doc.rope().slice(r).to_string());
+    }
+    let rope = doc.rope();
+    let line = rope.char_to_line(doc.cursor());
+    let end = if line + 1 < rope.len_lines() {
+        rope.line_to_char(line + 1)
+    } else {
+        rope.len_chars()
+    };
+    let r = rope.line_to_char(line)..end;
+    let mut text = rope.slice(r.clone()).to_string();
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    (r, text)
 }
 
 fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
@@ -71,6 +128,25 @@ fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
                 }
                 None => state.status = "Aucun fichier : lancez `ide <fichier>`".into(),
             },
+            Key::Char('z' | 'Z') if !k.mods.shift => {
+                if !doc.undo() {
+                    state.status = "Rien à annuler".into();
+                }
+            }
+            Key::Char('z' | 'Z' | 'y' | 'Y') => {
+                if !doc.redo() {
+                    state.status = "Rien à rétablir".into();
+                }
+            }
+            Key::Char('a' | 'A') => doc.select_all(),
+            Key::Char(c @ ('c' | 'C' | 'x' | 'X')) => {
+                let (r, text) = copied(doc);
+                if c.eq_ignore_ascii_case(&'x') {
+                    doc.edit(r, "");
+                }
+                return vec![Command::CopyToClipboard(text)];
+            }
+            Key::Char('v' | 'V') => return vec![Command::RequestPaste],
             _ => state.status = k.to_string(),
         }
         return vec![];
@@ -79,20 +155,21 @@ fn key(state: &mut State, k: KeyInput) -> Vec<Command> {
         state.status = k.to_string();
         return vec![];
     }
+    let ext = k.mods.shift;
     match k.key {
         Key::Char(c) if !c.is_control() => doc.insert_char(c),
         Key::Enter => doc.insert_newline(),
-        Key::Tab => (0..4).for_each(|_| doc.insert_char(' ')),
+        Key::Tab => doc.insert_str("    "),
         Key::Backspace => doc.backspace(),
         Key::Delete => doc.delete(),
-        Key::Left => doc.move_left(),
-        Key::Right => doc.move_right(),
-        Key::Up => doc.move_up(1),
-        Key::Down => doc.move_down(1),
-        Key::Home => doc.move_line_start(),
-        Key::End => doc.move_line_end(),
-        Key::PageUp => doc.move_up(page),
-        Key::PageDown => doc.move_down(page),
+        Key::Left => doc.move_left(ext),
+        Key::Right => doc.move_right(ext),
+        Key::Up => doc.move_up(1, ext),
+        Key::Down => doc.move_down(1, ext),
+        Key::Home => doc.move_line_start(ext),
+        Key::End => doc.move_line_end(ext),
+        Key::PageUp => doc.move_up(page, ext),
+        Key::PageDown => doc.move_down(page, ext),
         _ => state.status = k.to_string(),
     }
     vec![]
@@ -111,7 +188,7 @@ fn scroll_to_cursor(state: &mut State) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Modifiers, update};
+    use crate::{Modifiers, MouseInput, MouseKind, update};
     use std::path::PathBuf;
 
     fn k(key: Key) -> Event {
@@ -163,7 +240,7 @@ mod tests {
             vec![Command::Save {
                 path: PathBuf::from("/x/a.txt"),
                 contents: "abc    \r\n".into(),
-                version: 5,
+                version: 2,
             }]
         );
         update(&mut s, k(Key::Char('d')));
@@ -171,7 +248,7 @@ mod tests {
             &mut s,
             Event::Saved {
                 path: "/x/a.txt".into(),
-                version: 5,
+                version: 2,
             },
         );
         assert_eq!(s.status, "Sauvegardé : a.txt");
@@ -248,5 +325,121 @@ mod tests {
         assert_eq!(s.scroll_col, 3);
         update(&mut s, k(Key::Home));
         assert_eq!(s.scroll_col, 0);
+    }
+
+    fn avec(key: Key, ctrl: bool, shift: bool) -> Event {
+        Event::Key(KeyInput {
+            key,
+            mods: Modifiers {
+                ctrl,
+                shift,
+                ..Modifiers::default()
+            },
+        })
+    }
+    fn souris(kind: MouseKind, column: u16, row: u16) -> Event {
+        Event::Mouse(MouseInput {
+            kind,
+            column,
+            row,
+            mods: Modifiers::default(),
+        })
+    }
+    fn texte(s: &State) -> String {
+        s.doc.rope().to_string()
+    }
+
+    #[test]
+    fn ctrl_z_y_et_ctrl_shift_z() {
+        let mut s = opened("a");
+        update(&mut s, k(Key::Char('b')));
+        update(&mut s, ctrl('z'));
+        assert_eq!(texte(&s), "a");
+        assert!(!s.doc.is_dirty());
+        update(&mut s, ctrl('y'));
+        assert_eq!(texte(&s), "ba");
+        update(&mut s, ctrl('z'));
+        update(&mut s, avec(Key::Char('Z'), true, true));
+        assert_eq!(texte(&s), "ba");
+        update(&mut s, avec(Key::Char('Z'), true, true));
+        assert_eq!(s.status, "Rien à rétablir");
+    }
+
+    #[test]
+    fn shift_fleches_et_ctrl_a() {
+        let mut s = opened("abc\ndef");
+        update(&mut s, avec(Key::End, false, true));
+        update(&mut s, avec(Key::Left, false, true));
+        assert_eq!(s.doc.selection(), Some(0..2));
+        update(&mut s, k(Key::Char('x')));
+        assert_eq!(texte(&s), "xc\ndef");
+        update(&mut s, ctrl('a'));
+        assert_eq!(s.doc.selection(), Some(0..6));
+        update(&mut s, k(Key::Tab));
+        assert_eq!(texte(&s), "    ");
+        update(&mut s, avec(Key::Home, false, true));
+        update(&mut s, k(Key::Delete));
+        assert_eq!(texte(&s), "");
+    }
+
+    #[test]
+    fn copier_couper_coller() {
+        let mut s = opened("un\ndeux");
+        // Sans sélection : la ligne entière, avec un `\n` même en fin de fichier.
+        assert_eq!(
+            update(&mut s, ctrl('c')),
+            vec![Command::CopyToClipboard("un\n".into())]
+        );
+        update(&mut s, k(Key::Down));
+        assert_eq!(
+            update(&mut s, ctrl('x')),
+            vec![Command::CopyToClipboard("deux\n".into())]
+        );
+        assert_eq!(texte(&s), "un\n");
+        update(&mut s, k(Key::Up));
+        update(&mut s, avec(Key::Right, false, true));
+        assert_eq!(
+            update(&mut s, ctrl('x')),
+            vec![Command::CopyToClipboard("u".into())]
+        );
+        assert_eq!(texte(&s), "n\n");
+        assert_eq!(update(&mut s, ctrl('v')), vec![Command::RequestPaste]);
+        update(&mut s, Event::Paste("a\r\nb".into()));
+        assert_eq!(texte(&s), "a\nbn\n");
+        update(&mut s, ctrl('z'));
+        assert_eq!(texte(&s), "n\n");
+    }
+
+    #[test]
+    fn souris_clic_glisser_defilement() {
+        // Texte à partir de la colonne 30 + 6 = 36 ; 5 lignes visibles.
+        let mut s = opened("abc\nd中e\n");
+        update(&mut s, souris(MouseKind::Down, 37, 0));
+        assert_eq!(s.doc.cursor(), 1);
+        update(&mut s, souris(MouseKind::Drag, 38, 1)); // colonne 2 = milieu de 中 : avant
+        assert_eq!(s.doc.selection(), Some(1..5));
+        update(&mut s, souris(MouseKind::Up, 38, 1));
+        assert_eq!(s.doc.selection(), Some(1..5));
+        // Au-delà de la fin de ligne, puis au-delà du document.
+        update(&mut s, souris(MouseKind::Down, 39, 0));
+        assert_eq!((s.doc.cursor(), s.doc.selection()), (3, None));
+        update(&mut s, souris(MouseKind::Down, 50, 4));
+        assert_eq!(s.doc.cursor(), 8);
+        // Clic dans l'explorateur ou la barre de statut : ignoré.
+        update(&mut s, souris(MouseKind::Down, 5, 0));
+        update(&mut s, souris(MouseKind::Down, 37, 5));
+        assert_eq!(s.doc.cursor(), 8);
+        let mut s = opened(&"l\n".repeat(20));
+        update(&mut s, souris(MouseKind::ScrollDown, 37, 0));
+        update(&mut s, souris(MouseKind::ScrollDown, 37, 0));
+        assert_eq!((s.scroll_line, s.doc.cursor()), (6, 0));
+        for _ in 0..10 {
+            update(&mut s, souris(MouseKind::ScrollDown, 37, 0));
+        }
+        assert_eq!(s.scroll_line, 20);
+        update(&mut s, souris(MouseKind::ScrollUp, 37, 0));
+        assert_eq!(s.scroll_line, 17);
+        update(&mut s, souris(MouseKind::Down, 36, 1));
+        assert_eq!(s.doc.cursor_line_col(), (18, 0));
     }
 }

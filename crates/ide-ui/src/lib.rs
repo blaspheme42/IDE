@@ -138,12 +138,12 @@ mod tests {
             Some("notes.txt".into()),
             "fn main() {\n\tlet é = \"café\";\n\t// 🦀 crabe 日本\n}\n",
         );
-        doc.move_down(2);
-        doc.move_right();
-        doc.move_right();
-        doc.move_right();
-        doc.move_right();
-        doc.move_right();
+        doc.move_down(2, false);
+        doc.move_right(false);
+        doc.move_right(false);
+        doc.move_right(false);
+        doc.move_right(false);
+        doc.move_right(false);
         let backend = draw(&state(doc));
         insta::assert_snapshot!(backend);
         // "\t// 🦀" : tab (4) + "// " (3) + 🦀 (2) = colonne 9.
@@ -161,7 +161,7 @@ mod tests {
             })
             .collect();
         let mut doc = Document::from_text(Some("long.txt".into()), &text);
-        doc.move_down(7);
+        doc.move_down(7, false);
         let mut s = state(doc);
         s.scroll_line = 5;
         s.scroll_col = 3;

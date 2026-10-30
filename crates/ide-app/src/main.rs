@@ -81,6 +81,7 @@ async fn run(
             for cmd in ide_core::update(&mut state, ev) {
                 match cmd {
                     Command::Quit => quit = true,
+                    Command::CopyToClipboard(_) | Command::RequestPaste => {}
                     Command::Save {
                         path,
                         contents,

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 pub mod document;
 mod editor;
+mod history;
 
 pub use document::{Document, LineEnding};
 pub use editor::GUTTER_WIDTH;
@@ -42,10 +43,31 @@ pub struct KeyInput {
     pub mods: Modifiers,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseKind {
+    Down,
+    Drag,
+    Up,
+    ScrollUp,
+    ScrollDown,
+}
+
+/// Événement souris ; coordonnées écran 0-based.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MouseInput {
+    pub kind: MouseKind,
+    pub column: u16,
+    pub row: u16,
+    pub mods: Modifiers,
+}
+
 /// Tout ce qui arrive dans la boucle d'événements.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Key(KeyInput),
+    Mouse(MouseInput),
+    /// Texte du presse-papiers, en réponse à `Command::RequestPaste` ou collé par le terminal.
+    Paste(String),
     Resize {
         width: u16,
         height: u16,
@@ -81,6 +103,9 @@ pub enum Command {
         contents: String,
         version: u64,
     },
+    CopyToClipboard(String),
+    /// L'app lit le presse-papiers et renvoie `Event::Paste`.
+    RequestPaste,
 }
 
 #[derive(Debug, Default)]
@@ -211,7 +236,7 @@ mod tests {
     #[test]
     fn autres_touches_dans_le_statut() {
         let cas = [
-            (key(Key::Char('a'), true, false, false), "Ctrl+A"),
+            (key(Key::Char('b'), true, false, false), "Ctrl+B"),
             (key(Key::F(12), false, false, false), "F12"),
             (key(Key::Enter, true, false, false), "Ctrl+Entrée"),
             (key(Key::Esc, false, false, false), "Échap"),
