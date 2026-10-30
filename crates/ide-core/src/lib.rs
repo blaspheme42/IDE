@@ -4,11 +4,13 @@ use std::path::PathBuf;
 
 mod document;
 mod editor;
+mod explorer;
 mod history;
 mod search;
 
 pub use document::{Document, Indent, LineEnding};
 pub use editor::gutter_width;
+pub use explorer::{Explorer, FsChange, FsEntry, Node, Prompt, PromptKind};
 pub use search::Search;
 
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).
@@ -98,6 +100,15 @@ pub enum Event {
         path: PathBuf,
         error: String,
     },
+    /// Dossier racine de l'explorateur (argument de `ide`, ou dossier du fichier, ou dossier courant).
+    OpenRoot(PathBuf),
+    /// Réponse à `Command::ListDir`.
+    DirListed {
+        dir: PathBuf,
+        result: Result<Vec<FsEntry>, String>,
+    },
+    /// Réponse à `CreateFile` / `CreateDir` / `Rename` / `Trash`.
+    FsDone(Result<FsChange, String>),
 }
 
 /// Effets demandés par `update`, exécutés par l'app.
@@ -113,6 +124,30 @@ pub enum Command {
     CopyToClipboard(String),
     /// L'app lit le presse-papiers et renvoie `Event::Paste`.
     RequestPaste,
+    /// Lister les enfants directs de `dir` → `Event::DirListed`.
+    ListDir {
+        dir: PathBuf,
+        show_hidden: bool,
+    },
+    /// Lire un fichier → `Event::FileOpened` (+ `IndentDetected`) ou `Event::OpenFailed`.
+    OpenFile(PathBuf),
+    /// Opérations disque → `Event::FsDone`.
+    CreateFile(PathBuf),
+    CreateDir(PathBuf),
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    /// Vers la corbeille, jamais de suppression définitive.
+    Trash(PathBuf),
+}
+
+/// Partie de l'écran qui reçoit le clavier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Focus {
+    #[default]
+    Editor,
+    Explorer,
 }
 
 #[derive(Debug, Default)]
@@ -132,10 +167,18 @@ pub struct State {
     pub line_clip: Option<String>,
     /// Barre de recherche ouverte (Ctrl+F / Ctrl+H).
     pub search: Option<Search>,
+    pub explorer: Explorer,
+    pub focus: Focus,
 }
 
-/// Largeur de l'explorateur, partagée par l'UI et le calcul du défilement.
-pub const EXPLORER_WIDTH: u16 = 30;
+/// Largeur occupée par l'explorateur (0 s'il est masqué), partagée par l'UI et le calcul du défilement.
+pub fn explorer_width(state: &State) -> u16 {
+    if state.explorer.visible {
+        state.explorer.width.min(state.width)
+    } else {
+        0
+    }
+}
 
 /// Lignes de la barre de recherche, en bas de la zone éditeur : 0, 1 (rechercher) ou 2 (remplacer).
 pub fn search_bar_height(state: &State) -> u16 {
@@ -148,7 +191,7 @@ pub fn search_bar_height(state: &State) -> u16 {
 /// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, la barre de recherche et la barre de statut.
 pub fn editor_size(state: &State) -> (u16, u16) {
     (
-        state.width.saturating_sub(EXPLORER_WIDTH),
+        state.width.saturating_sub(explorer_width(state)),
         state.height.saturating_sub(1 + search_bar_height(state)),
     )
 }

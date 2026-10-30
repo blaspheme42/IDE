@@ -1,8 +1,8 @@
 //! Traduction des événements en actions sur l'état (clavier, fichiers, défilement).
 
 use crate::{
-    Command, Document, EXPLORER_WIDTH, Event, Key, KeyInput, MouseInput, MouseKind, State,
-    editor_size, search,
+    Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, editor_size, explorer,
+    search,
 };
 
 /// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace, colonne de diagnostics.
@@ -20,10 +20,16 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     let version = state.doc.version();
     let cmds = match event {
         Event::Key(k) => key(state, k),
-        Event::Mouse(m) => {
+        Event::Mouse(m) => explorer::mouse(state, m).unwrap_or_else(|| {
             mouse(state, m);
             vec![]
+        }),
+        Event::OpenRoot(root) => explorer::open_root(state, root),
+        Event::DirListed { dir, result } => {
+            explorer::listed(state, dir, result);
+            vec![]
         }
+        Event::FsDone(result) => explorer::fs_done(state, result),
         Event::Paste(text) if state.search.is_some() => {
             search::input(state, text.lines().next().unwrap_or_default());
             vec![]
@@ -99,7 +105,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
 
 fn mouse(state: &mut State, m: MouseInput) {
     let last = state.doc.rope().len_lines() - 1;
-    let left = EXPLORER_WIDTH + gutter_width(&state.doc);
+    let left = crate::explorer_width(state) + gutter_width(&state.doc);
     match m.kind {
         MouseKind::ScrollUp => state.scroll_line = state.scroll_line.saturating_sub(WHEEL_LINES),
         MouseKind::ScrollDown => state.scroll_line = (state.scroll_line + WHEEL_LINES).min(last),
@@ -156,6 +162,9 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     if !ctrl_q && state.quit_armed {
         state.quit_armed = false;
         state.status.clear();
+    }
+    if let Some(cmds) = explorer::key(state, k) {
+        return cmds;
     }
     if search::key(state, k) {
         return vec![];

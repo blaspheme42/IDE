@@ -2,6 +2,7 @@
 
 mod clipboard;
 mod files;
+mod workspace;
 
 use std::path::PathBuf;
 
@@ -129,6 +130,12 @@ async fn run(
                     } => {
                         let _ = save_tx.send((path, contents, version));
                     }
+                    cmd @ (Command::ListDir { .. }
+                    | Command::OpenFile(_)
+                    | Command::CreateFile(_)
+                    | Command::CreateDir(_)
+                    | Command::Rename { .. }
+                    | Command::Trash(_)) => workspace::spawn(cmd, tx.clone()),
                 }
             }
             if quit {

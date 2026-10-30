@@ -1,13 +1,14 @@
 //! Crate ide-ui : widgets ratatui.
 
+mod explorer;
 pub mod icons;
 
-use ide_core::{EXPLORER_WIDTH, LineEnding, Search, State, gutter_width, search_bar_height};
+use ide_core::{LineEnding, Search, State, explorer_width, gutter_width, search_bar_height};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::Paragraph;
 use std::ops::Range;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -27,8 +28,11 @@ const FLAG_OFF: Style = Style::new().fg(Color::DarkGray);
 pub fn render(state: &State, frame: &mut Frame) {
     let [main, status] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
-    let [explorer, editor] =
-        Layout::horizontal([Constraint::Length(EXPLORER_WIDTH), Constraint::Min(0)]).areas(main);
+    let [explorer, editor] = Layout::horizontal([
+        Constraint::Length(explorer_width(state)),
+        Constraint::Min(0),
+    ])
+    .areas(main);
     // Même hauteur que `editor_size` : la barre de recherche est prise sur la zone éditeur.
     let [editor, bar] = Layout::vertical([
         Constraint::Min(0),
@@ -41,7 +45,9 @@ pub fn render(state: &State, frame: &mut Frame) {
     ])
     .areas(editor);
 
-    frame.render_widget(Block::bordered().title(" EXPLORATEUR "), explorer);
+    if explorer.width > 0 {
+        explorer::render(state, frame, explorer);
+    }
 
     let doc = &state.doc;
     let rope = doc.rope();
