@@ -246,6 +246,41 @@ impl Document {
         });
     }
 
+    /// Remplace des plages triées et disjointes en une seule entrée d'historique (tout remplacer).
+    pub fn edit_many(&mut self, edits: Vec<(Range<usize>, String)>) {
+        if edits.is_empty() {
+            return;
+        }
+        let before = (self.cursor, self.anchor);
+        let mut changes = Vec::new();
+        // De la fin vers le début : les plages restantes gardent leurs index ; l'annulation rejoue à l'envers.
+        for (r, text) in edits.into_iter().rev() {
+            let start = r.start.min(self.rope.len_chars());
+            let end = r.end.clamp(start, self.rope.len_chars());
+            let removed = self.rope.slice(start..end).to_string();
+            self.rope.remove(start..end);
+            self.rope.insert(start, &text);
+            self.cursor = start + text.chars().count();
+            changes.push(Change {
+                pos: start,
+                removed,
+                inserted: text,
+            });
+        }
+        self.anchor = None;
+        self.preferred_col = None;
+        let version_before = self.version;
+        self.version = self.history.next_id();
+        self.history.record(Entry {
+            changes,
+            kind: Kind::Other,
+            before,
+            after: (self.cursor, None),
+            version_before,
+            version_after: self.version,
+        });
+    }
+
     /// Plage remplacée par une frappe : la sélection, sinon le curseur.
     fn target(&self) -> (Range<usize>, Kind) {
         match self.selection() {

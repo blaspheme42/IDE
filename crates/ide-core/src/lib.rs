@@ -5,9 +5,11 @@ use std::path::PathBuf;
 pub mod document;
 mod editor;
 mod history;
+mod search;
 
 pub use document::{Document, LineEnding};
 pub use editor::GUTTER_WIDTH;
+pub use search::Search;
 
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,16 +121,26 @@ pub struct State {
     pub scroll_col: usize,
     /// Ctrl+Q déjà pressé une fois avec des modifications non sauvegardées.
     pub quit_armed: bool,
+    /// Barre de recherche ouverte (Ctrl+F / Ctrl+H).
+    pub search: Option<Search>,
 }
 
 /// Largeur de l'explorateur, partagée par l'UI et le calcul du défilement.
 pub const EXPLORER_WIDTH: u16 = 30;
 
-/// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur et la barre de statut.
+/// Lignes de la barre de recherche, en bas de la zone éditeur : 0, 1 (rechercher) ou 2 (remplacer).
+pub fn search_bar_height(state: &State) -> u16 {
+    state
+        .search
+        .as_ref()
+        .map_or(0, |s| if s.replace.is_some() { 2 } else { 1 })
+}
+
+/// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, la barre de recherche et la barre de statut.
 pub fn editor_size(state: &State) -> (u16, u16) {
     (
         state.width.saturating_sub(EXPLORER_WIDTH),
-        state.height.saturating_sub(1),
+        state.height.saturating_sub(1 + search_bar_height(state)),
     )
 }
 
