@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 ide-core.workspace = true
 ide-ui.workspace = true
+ide-workspace.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 tokio.workspace = true

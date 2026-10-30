@@ -203,7 +203,8 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> bool {
             state.search = None;
             state.status.clear();
         }
-        Key::Enter if ctrl && alt => replace_all(state),
+        // Sans protocole clavier étendu, le terminal envoie Ctrl+Alt+Entrée comme Alt+Entrée.
+        Key::Enter if alt => replace_all(state),
         Key::Enter if !ctrl && !alt && !shift && s.focus_replace => replace_one(state),
         Key::Enter | Key::F(3) if !ctrl && !alt => step(state, !shift),
         Key::Tab => s.focus_replace = s.replace.is_some() && !s.focus_replace,
@@ -311,7 +312,7 @@ mod tests {
         assert_eq!(matches(&s), vec![0..3, 5..9]);
         update(&mut s, k(Key::Tab));
         taper(&mut s, "$2:${nom}");
-        update(&mut s, touche(Key::Enter, true, true, false));
+        update(&mut s, touche(Key::Enter, false, true, false));
         assert_eq!(texte(&s), "1:x, 22:y");
         assert_eq!(s.status, "Aucun résultat");
     }

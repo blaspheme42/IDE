@@ -747,6 +747,7 @@ dependencies = [
  "futures",
  "ide-core",
  "ide-ui",
+ "ide-workspace",
  "ratatui",
  "tempfile",
  "tokio",

@@ -25,6 +25,8 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             search::input(state, text.lines().next().unwrap_or_default());
             vec![]
         }
+        // Presse-papiers vide : rien à coller, la sélection reste.
+        Event::Paste(text) if text.is_empty() => vec![],
         Event::Paste(text) => {
             state.doc.insert_str(&text);
             vec![]
@@ -40,6 +42,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             state.scroll_line = 0;
             state.scroll_col = 0;
             state.status = format!("Ouvert : {}", state.doc.display_name());
+            vec![]
+        }
+        Event::IndentDetected(indent) => {
+            state.doc.indent = indent;
             vec![]
         }
         Event::OpenFailed { path, error } => {
@@ -74,10 +80,14 @@ fn mouse(state: &mut State, m: MouseInput) {
     match m.kind {
         MouseKind::ScrollUp => state.scroll_line = state.scroll_line.saturating_sub(WHEEL_LINES),
         MouseKind::ScrollDown => state.scroll_line = (state.scroll_line + WHEEL_LINES).min(last),
-        MouseKind::Up => {}
-        // Un clic hors de la zone de texte est ignoré ; un glisser peut en sortir.
-        MouseKind::Down if m.column < left || m.row >= editor_size(state).1 => {}
+        MouseKind::Up => state.dragging = false,
+        // Un clic hors de la zone de texte est ignoré ; un glisser peut en sortir, s'il y a commencé.
+        MouseKind::Down if m.column < left || m.row >= editor_size(state).1 => {
+            state.dragging = false
+        }
+        MouseKind::Drag if !state.dragging => {}
         MouseKind::Down | MouseKind::Drag => {
+            state.dragging = true;
             let line = state.scroll_line + usize::from(m.row);
             let col = state.scroll_col + usize::from(m.column.saturating_sub(left));
             let pos = state.doc.pos_at(line, col);
@@ -428,6 +438,34 @@ mod tests {
         assert_eq!(texte(&s), "a\nbn\n");
         update(&mut s, ctrl('z'));
         assert_eq!(texte(&s), "n\n");
+    }
+
+    #[test]
+    fn glisser_commence_hors_du_texte_ignore() {
+        let mut s = opened("abcdef");
+        update(&mut s, souris(MouseKind::Down, 5, 0));
+        update(&mut s, souris(MouseKind::Drag, 39, 0));
+        assert_eq!((s.doc.cursor(), s.doc.selection()), (0, None));
+        update(&mut s, souris(MouseKind::Down, 37, 0));
+        update(&mut s, souris(MouseKind::Up, 37, 0));
+        update(&mut s, souris(MouseKind::Drag, 39, 0));
+        assert_eq!(s.doc.selection(), None);
+    }
+
+    #[test]
+    fn collage_vide_et_indentation_detectee() {
+        let mut s = opened("abc");
+        s.doc.select_all();
+        update(&mut s, Event::Paste(String::new()));
+        assert_eq!(s.doc.selection(), Some(0..3));
+        update(&mut s, Event::Paste("x".into()));
+        assert_eq!(s.doc.rope().to_string(), "x");
+        let indent = crate::Indent {
+            use_tabs: true,
+            width: 8,
+        };
+        update(&mut s, Event::IndentDetected(indent));
+        assert_eq!(s.doc.indent, indent);
     }
 
     #[test]

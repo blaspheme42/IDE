@@ -72,11 +72,21 @@ async fn run(
     // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
     if let Some(path) = file {
         let p = path.clone();
-        let ev = match tokio::task::spawn_blocking(move || files::read_file(&p)).await? {
+        let (read, style) = tokio::task::spawn_blocking(move || {
+            (files::read_file(&p), ide_workspace::indent_style(&p))
+        })
+        .await?;
+        let ev = match read {
             Ok(text) => Event::FileOpened { path, text },
             Err(error) => Event::OpenFailed { path, error },
         };
         tx.send(ev).await?;
+        // Après l'ouverture, qui remet le document à zéro.
+        tx.send(Event::IndentDetected(ide_core::Indent {
+            use_tabs: style.use_tabs,
+            width: style.width,
+        }))
+        .await?;
     }
     let mut reader = tokio::spawn(read_terminal_events(tx.clone()));
 

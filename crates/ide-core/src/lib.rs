@@ -80,6 +80,8 @@ pub enum Event {
         path: PathBuf,
         text: String,
     },
+    /// Style d'indentation du fichier ouvert (.editorconfig), lu par l'app.
+    IndentDetected(Indent),
     OpenFailed {
         path: PathBuf,
         error: String,
@@ -121,6 +123,8 @@ pub struct State {
     pub scroll_col: usize,
     /// Ctrl+Q déjà pressé une fois avec des modifications non sauvegardées.
     pub quit_armed: bool,
+    /// Bouton gauche enfoncé dans la zone de texte : un glisser étend la sélection.
+    pub dragging: bool,
     /// Barre de recherche ouverte (Ctrl+F / Ctrl+H).
     pub search: Option<Search>,
 }
