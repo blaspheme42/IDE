@@ -1,5 +1,13 @@
 //! Cœur de l'IDE : état et logique, sans aucune I/O.
 
+use std::path::PathBuf;
+
+pub mod document;
+mod editor;
+
+pub use document::{Document, LineEnding};
+pub use editor::GUTTER_WIDTH;
+
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -12,6 +20,11 @@ pub enum Key {
     Down,
     Left,
     Right,
+    Delete,
+    Home,
+    End,
+    PageUp,
+    PageDown,
     F(u8),
     Other,
 }
@@ -33,14 +46,41 @@ pub struct KeyInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Key(KeyInput),
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
     Tick,
+    /// L'app a lu le fichier passé en argument.
+    FileOpened {
+        path: PathBuf,
+        text: String,
+    },
+    OpenFailed {
+        path: PathBuf,
+        error: String,
+    },
+    /// `version` = celle transmise dans `Command::Save`.
+    Saved {
+        path: PathBuf,
+        version: u64,
+    },
+    SaveFailed {
+        path: PathBuf,
+        error: String,
+    },
 }
 
 /// Effets demandés par `update`, exécutés par l'app.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Quit,
+    /// Écriture atomique par l'app (NF-06) ; `contents` a déjà ses fins de ligne d'origine.
+    Save {
+        path: PathBuf,
+        contents: String,
+        version: u64,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -48,26 +88,28 @@ pub struct State {
     pub width: u16,
     pub height: u16,
     pub status: String,
+    pub doc: Document,
+    /// Première ligne et première colonne d'affichage visibles dans l'éditeur.
+    pub scroll_line: usize,
+    pub scroll_col: usize,
+    /// Ctrl+Q déjà pressé une fois avec des modifications non sauvegardées.
+    pub quit_armed: bool,
+}
+
+/// Largeur de l'explorateur, partagée par l'UI et le calcul du défilement.
+pub const EXPLORER_WIDTH: u16 = 30;
+
+/// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur et la barre de statut.
+pub fn editor_size(state: &State) -> (u16, u16) {
+    (
+        state.width.saturating_sub(EXPLORER_WIDTH),
+        state.height.saturating_sub(1),
+    )
 }
 
 /// Seule fonction qui modifie l'état. Synchrone, rapide, sans I/O.
 pub fn update(state: &mut State, event: Event) -> Vec<Command> {
-    match event {
-        Event::Key(KeyInput {
-            key: Key::Char('q' | 'Q'),
-            mods: Modifiers { ctrl: true, .. },
-        }) => vec![Command::Quit],
-        Event::Key(input) => {
-            state.status = input.to_string();
-            Vec::new()
-        }
-        Event::Resize { width, height } => {
-            state.width = width;
-            state.height = height;
-            Vec::new()
-        }
-        Event::Tick => Vec::new(),
-    }
+    editor::update(state, event)
 }
 
 /// Description lisible, ex. "Ctrl+Alt+Shift+Entrée".
@@ -97,6 +139,11 @@ impl std::fmt::Display for KeyInput {
             Key::Down => f.write_str("Bas"),
             Key::Left => f.write_str("Gauche"),
             Key::Right => f.write_str("Droite"),
+            Key::Delete => f.write_str("Suppr"),
+            Key::Home => f.write_str("Début"),
+            Key::End => f.write_str("Fin"),
+            Key::PageUp => f.write_str("Page préc."),
+            Key::PageDown => f.write_str("Page suiv."),
             Key::F(n) => write!(f, "F{n}"),
             Key::Other => f.write_str("Touche inconnue"),
         }
@@ -128,12 +175,13 @@ mod tests {
     }
 
     #[test]
-    fn q_sans_ctrl_ne_quitte_pas() {
+    fn q_sans_ctrl_insere() {
         let mut s = State::default();
         assert!(update(&mut s, key(Key::Char('q'), false, false, false)).is_empty());
-        assert_eq!(s.status, "q");
+        assert_eq!(s.doc.rope().to_string(), "q");
         assert!(update(&mut s, key(Key::Char('q'), false, true, false)).is_empty());
         assert_eq!(s.status, "Alt+Q");
+        assert_eq!(s.doc.rope().to_string(), "q");
     }
 
     #[test]
@@ -163,12 +211,11 @@ mod tests {
     #[test]
     fn autres_touches_dans_le_statut() {
         let cas = [
-            (key(Key::Char('s'), true, false, false), "Ctrl+S"),
-            (key(Key::Char('a'), false, false, false), "a"),
+            (key(Key::Char('a'), true, false, false), "Ctrl+A"),
             (key(Key::F(12), false, false, false), "F12"),
-            (key(Key::Enter, false, false, false), "Entrée"),
+            (key(Key::Enter, true, false, false), "Ctrl+Entrée"),
             (key(Key::Esc, false, false, false), "Échap"),
-            (key(Key::Char(' '), false, false, false), "Espace"),
+            (key(Key::Char(' '), false, true, false), "Alt+Espace"),
             (key(Key::Other, false, false, false), "Touche inconnue"),
             (key(Key::Left, true, true, true), "Ctrl+Alt+Shift+Gauche"),
             (key(Key::Char('x'), true, true, true), "Ctrl+Alt+Shift+X"),

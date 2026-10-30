@@ -24,6 +24,11 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 tracing-appender = "0.2"
 insta = "1"
+ropey = "1.6"
+unicode-segmentation = "1.13"
+unicode-width = "0.2"
+tempfile = "3"
+proptest = "1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

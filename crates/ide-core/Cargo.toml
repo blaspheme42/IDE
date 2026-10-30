@@ -7,6 +7,12 @@ license.workspace = true
 
 # Zéro I/O : aucune dépendance terminal, async ou disque ici.
 [dependencies]
+ropey.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

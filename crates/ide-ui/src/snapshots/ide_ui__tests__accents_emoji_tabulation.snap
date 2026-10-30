@@ -1,8 +1,12 @@
 ---
 source: crates/ide-ui/src/lib.rs
-expression: terminal.backend()
+expression: backend
 ---
-"┌ EXPLORATEUR ───────────────┐                                                  "
+"┌ EXPLORATEUR ───────────────┐   1  fn main() {                                 "
+"│                            │   2      let é = "café";                         "
+"│                            │   3      // 🦀 crabe 日本                        " Hidden by multi-width symbols: [(44, " "), (53, " "), (55, " ")]
+"│                            │   4  }                                           "
+"│                            │   5                                              "
 "│                            │                                                  "
 "│                            │                                                  "
 "│                            │                                                  "
@@ -10,10 +14,6 @@ expression: terminal.backend()
 "│                            │                                                  "
 "│                            │                                                  "
 "│                            │                                                  "
-"│                            │                                                  "
-"│                            │                                                  "
-"│                            │                                                  "
-"│                            │                Ctrl+Q pour quitter               "
 "│                            │                                                  "
 "│                            │                                                  "
 "│                            │                                                  "
@@ -25,4 +25,4 @@ expression: terminal.backend()
 "│                            │                                                  "
 "│                            │                                                  "
 "└────────────────────────────┘                                                  "
-" Prêt | 80x24                                                                   "
+" notes.txt | Prêt                                     Ln 3, Col 10 | LF | UTF-8 "

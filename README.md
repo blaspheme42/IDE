@@ -31,6 +31,9 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 
 ## Utilisation
 
-- `Ctrl+Q` : quitter.
+- `ide <fichier>` : ouvrir un fichier (créé à la première sauvegarde s'il n'existe pas).
+- `Ctrl+S` : sauvegarder.
+- Flèches, `Début`/`Fin`, `Page préc.`/`Page suiv.` : se déplacer.
+- `Ctrl+Q` : quitter ; s'il y a des modifications non sauvegardées, `Ctrl+Q` deux fois pour quitter sans sauvegarder.
 - Logs : `$XDG_STATE_HOME/ide/ide.log` (par défaut `~/.local/state/ide/ide.log`).
 - `ide --panic-test` : panique volontairement après le premier rendu, pour vérifier que le terminal est bien restauré.

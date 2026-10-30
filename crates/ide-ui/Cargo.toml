@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 ide-core.workspace = true
 ratatui.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

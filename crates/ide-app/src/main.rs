@@ -1,5 +1,7 @@
 //! Binaire de l'IDE : boucle d'événements façon Elm (événement → update → rendu).
 
+mod files;
+
 use std::path::PathBuf;
 
 use anyhow::Context;
@@ -12,7 +14,13 @@ use tracing_appender::non_blocking::WorkerGuard;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _log_guard = init_logging()?;
-    let panic_test = std::env::args().any(|a| a == "--panic-test");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let panic_test = args.iter().any(|a| a == "--panic-test");
+    // `ide [FICHIER]` : premier argument qui n'est pas une option.
+    let file = args
+        .into_iter()
+        .find(|a| !a.starts_with("--"))
+        .map(PathBuf::from);
     // Trace les panics dans le log ; ratatui::init chaîne ce hook après la restauration.
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -21,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     }));
     // ratatui::init installe un hook de panic qui restaure le terminal (NF-08).
     let mut terminal = ratatui::init();
-    let result = run(&mut terminal, panic_test).await;
+    let result = run(&mut terminal, panic_test, file).await;
     ratatui::restore();
     if let Err(e) = &result {
         tracing::error!("sortie sur erreur : {e:#}");
@@ -29,7 +37,11 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
-async fn run(terminal: &mut ratatui::DefaultTerminal, panic_test: bool) -> anyhow::Result<()> {
+async fn run(
+    terminal: &mut ratatui::DefaultTerminal,
+    panic_test: bool,
+    file: Option<PathBuf>,
+) -> anyhow::Result<()> {
     let size = terminal.size()?;
     let mut state = State {
         width: size.width,
@@ -37,22 +49,66 @@ async fn run(terminal: &mut ratatui::DefaultTerminal, panic_test: bool) -> anyho
         ..State::default()
     };
 
-    // Le lecteur détient le seul `tx` : s'il s'arrête, `recv` renvoie None et l'app sort au lieu de se figer.
     let (tx, mut rx) = mpsc::channel::<Event>(256);
-    tokio::spawn(read_terminal_events(tx));
+    // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
+    if let Some(path) = file {
+        let p = path.clone();
+        let ev = match tokio::task::spawn_blocking(move || files::read_file(&p)).await? {
+            Ok(text) => Event::FileOpened { path, text },
+            Err(error) => Event::OpenFailed { path, error },
+        };
+        tx.send(ev).await?;
+    }
+    let mut reader = tokio::spawn(read_terminal_events(tx.clone()));
 
     terminal.draw(|f| ide_ui::render(&state, f))?;
     if panic_test {
         panic!("--panic-test : panic volontaire après le premier rendu");
     }
 
-    while let Some(ev) = rx.recv().await {
-        if ide_core::update(&mut state, ev).contains(&Command::Quit) {
+    loop {
+        // On garde un `tx` pour les sauvegardes, donc `recv` ne finit jamais : on surveille la fin du lecteur.
+        let ev = tokio::select! {
+            biased;
+            Some(ev) = rx.recv() => ev,
+            _ = &mut reader => break,
+        };
+        let mut quit = false;
+        for cmd in ide_core::update(&mut state, ev) {
+            match cmd {
+                Command::Quit => quit = true,
+                Command::Save {
+                    path,
+                    contents,
+                    version,
+                } => spawn_save(tx.clone(), path, contents, version),
+            }
+        }
+        if quit {
             break;
         }
         terminal.draw(|f| ide_ui::render(&state, f))?;
     }
     Ok(())
+}
+
+/// Sauvegarde hors de la boucle (NF-05) ; le résultat revient comme un événement.
+fn spawn_save(tx: mpsc::Sender<Event>, path: PathBuf, contents: String, version: u64) {
+    tokio::spawn(async move {
+        let p = path.clone();
+        let res = tokio::task::spawn_blocking(move || files::save_atomic(&p, &contents))
+            .await
+            .map_err(std::io::Error::other)
+            .and_then(|r| r);
+        let ev = match res {
+            Ok(()) => Event::Saved { path, version },
+            Err(e) => Event::SaveFailed {
+                path,
+                error: format!("échec de la sauvegarde : {e}"),
+            },
+        };
+        let _ = tx.send(ev).await;
+    });
 }
 
 async fn read_terminal_events(tx: mpsc::Sender<Event>) {
@@ -88,6 +144,11 @@ fn convert(ev: ct::Event) -> Option<Event> {
                 ct::KeyCode::Down => Key::Down,
                 ct::KeyCode::Left => Key::Left,
                 ct::KeyCode::Right => Key::Right,
+                ct::KeyCode::Delete => Key::Delete,
+                ct::KeyCode::Home => Key::Home,
+                ct::KeyCode::End => Key::End,
+                ct::KeyCode::PageUp => Key::PageUp,
+                ct::KeyCode::PageDown => Key::PageDown,
                 ct::KeyCode::F(n) => Key::F(n),
                 _ => Key::Other,
             };
@@ -162,6 +223,22 @@ mod tests {
             convert(key(KeyCode::Enter, KeyModifiers::NONE)),
             input(Key::Enter, Modifiers::default())
         );
+    }
+
+    #[test]
+    fn touches_de_navigation() {
+        for (code, k) in [
+            (KeyCode::Delete, Key::Delete),
+            (KeyCode::Home, Key::Home),
+            (KeyCode::End, Key::End),
+            (KeyCode::PageUp, Key::PageUp),
+            (KeyCode::PageDown, Key::PageDown),
+        ] {
+            assert_eq!(
+                convert(key(code, KeyModifiers::NONE)),
+                input(k, Modifiers::default())
+            );
+        }
     }
 
     #[test]
