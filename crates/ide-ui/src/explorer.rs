@@ -263,7 +263,11 @@ mod tests {
         // Invite sur la ligne 21 (dernière intérieure au-dessus de la barre d'état), après « Renommer : ab ».
         assert_eq!(full(&s), Position::new(1 + 11 + 2, 21));
         s.focus = Focus::Editor;
-        assert_eq!(full(&s).y, ide_core::TAB_BAR_HEIGHT, "curseur dans l'éditeur, sous la barre d'onglets");
+        assert_eq!(
+            full(&s).y,
+            ide_core::TAB_BAR_HEIGHT,
+            "curseur dans l'éditeur, sous la barre d'onglets"
+        );
     }
 
     #[test]
