@@ -1,0 +1,28 @@
+---
+source: crates/ide-ui/src/lib.rs
+expression: b
+---
+"┌ P ─────────────────────────┐ a.rs                                             "
+"│(dossier vide)              │   1 ⚠let x = io::st;                             "
+"│                            │   2  let x = io::st;                             "
+"│                            │   3  let x = io::st;                             "
+"│                            │   4 ✖let x = io::st;                             "
+"│                            │   5  let x = io::st;                             "
+"│                            │   6  let x = io::st;                             "
+"│                            │   7  let x = io::st;                             "
+"│                            │   8  let x = io::st;                             "
+"│                            │   9  let x = io::st;                             "
+"│                            │  10  let x = io::st;                             "
+"│                            │  11  let x = io::st;                             "
+"│                            │  12  let x = io::st;                             "
+"│                            │  13  let x = io::st;                             "
+"│                            │  14  let x = io::st;                             "
+"│                            │ PROBLÈMES (3) ───────────────────────────────────"
+"│                            │ ● /ailleurs/b.rs:10:1  problème 9:0              "
+"│                            │ ⚠ src/a.rs:1:5  problème 0:4                     "
+"│                            │ ✖ src/a.rs:4:13  problème 3:12                   "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"└────────────────────────────┘                                                  "
+" ✖ 1 ⚠ 1 | a.rs | Prêt               rust-analyzer ✓ | Ln 1, Col 1 | LF | UTF-8 "
