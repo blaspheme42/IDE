@@ -196,7 +196,9 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
 fn mouse(state: &mut State, m: MouseInput) {
     let last = state.doc.rope().len_lines() - 1;
     let left = crate::explorer_width(state) + gutter_width(&state.doc);
-    let bottom = TAB_BAR_HEIGHT + editor_size(state).1;
+    // Ligne 0 : onglets, puis le bandeau de copie de secours s'il est affiché, puis le texte.
+    let top = TAB_BAR_HEIGHT + crate::banner_height(state);
+    let bottom = top + editor_size(state).1;
     match m.kind {
         MouseKind::Down if m.row < TAB_BAR_HEIGHT => {
             state.dragging = false;
@@ -211,11 +213,13 @@ fn mouse(state: &mut State, m: MouseInput) {
         MouseKind::ScrollDown => state.scroll_line = (state.scroll_line + WHEEL_LINES).min(last),
         MouseKind::Up => state.dragging = false,
         // Un clic hors de la zone de texte est ignoré ; un glisser peut en sortir, s'il y a commencé.
-        MouseKind::Down if m.column < left || m.row >= bottom => state.dragging = false,
+        MouseKind::Down if m.column < left || m.row < top || m.row >= bottom => {
+            state.dragging = false;
+        }
         MouseKind::Drag if !state.dragging => {}
         MouseKind::Down | MouseKind::Drag => {
             state.dragging = true;
-            let line = state.scroll_line + usize::from(m.row.saturating_sub(TAB_BAR_HEIGHT));
+            let line = state.scroll_line + usize::from(m.row.saturating_sub(top));
             let col = state.scroll_col + usize::from(m.column.saturating_sub(left));
             let pos = state.doc.pos_at(line, col);
             let extend = m.kind == MouseKind::Drag || m.mods.shift;

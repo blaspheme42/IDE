@@ -146,6 +146,46 @@ mod tests {
     }
 
     #[test]
+    fn bandeau_retire_une_ligne_et_decale_la_souris() {
+        use crate::{MouseInput, MouseKind, banner_height, editor_size};
+        let mut s = deux();
+        update(
+            &mut s,
+            Event::FileOpened {
+                path: "/x/c.txt".into(),
+                text: "l0\nl1\nl2".into(),
+            },
+        );
+        let h = editor_size(&s).1;
+        assert_eq!(banner_height(&s), 0);
+        offre(&mut s);
+        assert_eq!(banner_height(&s), 1);
+        assert_eq!(editor_size(&s).1, h - 1);
+        let col = crate::explorer_width(&s) + crate::gutter_width(&s.doc) + 1;
+        let clic = |s: &mut State, row| {
+            update(
+                s,
+                Event::Mouse(MouseInput {
+                    kind: MouseKind::Down,
+                    column: col,
+                    row,
+                    mods: Modifiers::default(),
+                }),
+            );
+            s.doc.cursor_line_col()
+        };
+        // Ligne 0 : onglets ; ligne 1 : bandeau (ignorée) ; ligne 2 : première ligne du texte.
+        assert_eq!(clic(&mut s, 3), (1, 1));
+        assert_eq!(clic(&mut s, 1), (1, 1));
+        assert_eq!(clic(&mut s, 2), (0, 1));
+        // Offre réglée : le texte remonte d'une ligne.
+        update(&mut s, touche('n', false, true));
+        assert_eq!(editor_size(&s).1, h);
+        assert_eq!(clic(&mut s, 1), (0, 1));
+        assert_eq!(clic(&mut s, 2), (1, 1));
+    }
+
+    #[test]
     fn copie_trouvee_proposee() {
         let mut s = deux();
         offre(&mut s);
