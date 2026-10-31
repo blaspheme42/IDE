@@ -17,9 +17,10 @@ use std::ops::Range;
 use theme::Theme;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-/// Dessine toute l'interface avec le thème sombre (la configuration le choisira plus tard).
+/// Dessine toute l'interface avec le thème de la configuration (sombre si nom inconnu).
 pub fn render(state: &State, frame: &mut Frame) {
-    render_with(state, frame, &Theme::dark());
+    let theme = Theme::by_name(&state.settings.theme).unwrap_or_else(Theme::dark);
+    render_with(state, frame, &theme);
 }
 
 /// Dessine toute l'interface à partir de l'état, avec `theme`. Pure : aucune I/O.
@@ -774,5 +775,23 @@ mod tests {
         assert_eq!(b.buffer()[(X + 3, Y)].fg, t.foreground);
         // Ligne vide sous le texte : fond et texte du thème clair.
         assert_eq!((c(0).fg, c(0).bg), (t.foreground, t.background));
+    }
+
+    fn draw_settings(theme: &str) -> TestBackend {
+        let mut s = State::default();
+        s.settings.theme = theme.into();
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|f| render(&s, f)).unwrap();
+        terminal.backend().clone()
+    }
+
+    #[test]
+    fn render_suit_le_theme_configure() {
+        let (l, d) = (Theme::light(), Theme::dark());
+        let c = draw_settings("light").buffer()[(X, Y + 1)].clone();
+        assert_eq!((c.fg, c.bg), (l.foreground, l.background));
+        // Nom inconnu : repli sur le sombre.
+        let c = draw_settings("solarized").buffer()[(X, Y + 1)].clone();
+        assert_eq!((c.fg, c.bg), (d.foreground, d.background));
     }
 }
