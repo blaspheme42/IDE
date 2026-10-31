@@ -838,6 +838,7 @@ dependencies = [
  "crossterm",
  "futures",
  "ide-core",
+ "ide-lsp",
  "ide-syntax",
  "ide-ui",
  "ide-workspace",

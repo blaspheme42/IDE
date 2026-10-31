@@ -153,7 +153,10 @@ async fn run(
                 _ = &mut reader => break,
             };
             let mut quit = false;
-            for cmd in ide_core::update(&mut state, ev) {
+            let cmds = ide_core::update(&mut state, ev);
+            // didChange de la version éditée avant toute requête LSP qui la vise.
+            lsp.sync(&state);
+            for cmd in cmds {
                 match cmd {
                     Command::Quit => quit = true,
                     Command::CopyToClipboard(text) => {
@@ -185,7 +188,6 @@ async fn run(
                 break;
             }
             highlighter.sync(&mut state);
-            lsp.sync(&state);
             terminal.draw(|f| ide_ui::render(&state, f))?;
         }
         anyhow::Ok(())
@@ -194,6 +196,7 @@ async fn run(
     // Avant de quitter, on laisse finir les sauvegardes en attente ; sans `rx`, leurs événements sont ignorés.
     drop(rx);
     drop(save_tx);
+    lsp.shutdown().await;
     if let Err(e) = saver.await {
         tracing::error!("tâche de sauvegarde : {e}");
     }
