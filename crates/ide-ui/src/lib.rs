@@ -3,6 +3,7 @@
 mod explorer;
 pub mod icons;
 mod lsp;
+mod palette;
 pub mod theme;
 
 use ide_core::{
@@ -221,7 +222,17 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         (e, w) if nerd => format!("✖ {e} ⚠ {w} | "),
         (e, w) => format!("E {e} W {w} | "),
     };
-    let left = format!(" {counts}{}{dirty} | {} ", doc.display_name(), state.status);
+    // F-70 : branche en tête, icône Nerd seulement si disponible.
+    let branch = match &state.git_branch {
+        Some(b) if nerd => format!("\u{e725} {b} | "),
+        Some(b) => format!("{b} | "),
+        None => String::new(),
+    };
+    let left = format!(
+        " {branch}{counts}{}{dirty} | {} ",
+        doc.display_name(),
+        state.status
+    );
     let lsp_status = if state.lsp_status.is_empty() {
         String::new()
     } else {
@@ -238,6 +249,8 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     );
     frame.render_widget(Paragraph::new(left).style(theme.status_bar), status);
     frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), status);
+    // En dernier : recouvre tout et prend le curseur placé plus haut (éditeur, recherche, explorateur).
+    palette::render(state, frame, theme);
 }
 
 /// Barre d'onglets ` nom ● │ nom2 │ …`, défilée comme `tab_spans` pour garder l'actif visible.
@@ -1074,5 +1087,19 @@ mod tests {
         let l = ligne(&draw(&state(Document::from_text(None, ""))), 23);
         assert!(l.starts_with(" [sans nom] | Prêt"), "{l}");
         assert!(l.contains("Ln 1, Col 1 | LF") && !l.contains("| Ln"), "{l}");
+    }
+
+    #[test]
+    fn barre_de_statut_branche() {
+        let mut s = diagnostique("abc", vec![diag(0, 0, 0, 1, Severity::Error)]);
+        s.git_branch = Some("main".into());
+        let l = ligne(&draw(&s), 23);
+        assert!(
+            l.starts_with(" \u{e725} main | ✖ 1 ⚠ 0 | a.rs | Prêt"),
+            "{l}"
+        );
+        s.settings.nerd_icons = false;
+        let l = ligne(&draw(&s), 23);
+        assert!(l.starts_with(" main | E 1 W 0 | a.rs"), "{l}");
     }
 }
