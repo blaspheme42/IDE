@@ -10,6 +10,7 @@ ide-core.workspace = true
 ec4rs.workspace = true
 ignore.workspace = true
 trash.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

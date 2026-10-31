@@ -28,20 +28,36 @@ impl Default for IndentStyle {
 /// Lit les `.editorconfig` applicables à `path` (en remontant jusqu'à `root = true`) ;
 /// défaut si absent, illisible ou invalide. `path` n'a pas besoin d'exister.
 pub fn indent_style(path: &Path) -> IndentStyle {
+    indent_style_or(path, IndentStyle::default())
+}
+
+/// Comme [`indent_style`], mais `default` quand aucun `.editorconfig` ne fixe
+/// `indent_style`, `indent_size` ni `tab_width`.
+pub fn indent_style_or(path: &Path, default: IndentStyle) -> IndentStyle {
     // Un .editorconfig illisible ou mal formé : on garde le défaut.
     let Ok(props) = ec4rs::properties_of(path) else {
-        return IndentStyle::default();
+        return default;
     };
-    let use_tabs = matches!(props.get::<Style>(), Ok(Style::Tabs));
+    if ["indent_style", "indent_size", "tab_width"]
+        .iter()
+        .all(|k| props.get_raw_for_key(k).is_unset())
+    {
+        return default;
+    }
+    let use_tabs = match props.get::<Style>() {
+        Ok(Style::Tabs) => true,
+        Ok(Style::Spaces) => false,
+        Err(_) => default.use_tabs,
+    };
     let tab_width = match props.get::<TabWidth>() {
         Ok(TabWidth::Value(n)) => Some(n),
         _ => None,
     };
     let width = match props.get::<IndentSize>() {
         Ok(IndentSize::Value(n)) => n,
-        Ok(IndentSize::UseTabWidth) => tab_width.unwrap_or(4),
-        Err(_) if use_tabs => tab_width.unwrap_or(4),
-        Err(_) => 4,
+        Ok(IndentSize::UseTabWidth) => tab_width.unwrap_or(default.width),
+        Err(_) if use_tabs => tab_width.unwrap_or(default.width),
+        Err(_) => default.width,
     };
     IndentStyle {
         use_tabs,
@@ -132,6 +148,27 @@ mod tests {
         fs::write(dir.path().join(".editorconfig"), parent)?;
         let s = style(&sub, "root = true\n[*]\nindent_size = 2\n", "a.rs")?;
         assert_eq!(s, st(false, 2));
+        Ok(())
+    }
+
+    #[test]
+    fn defaut_fourni_sans_indentation_fixee() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let d = dir.path();
+        let tab2 = IndentStyle {
+            use_tabs: true,
+            width: 2,
+            tab_width: 2,
+        };
+        let sans = "root = true\n[*]\ncharset = utf-8\n";
+        fs::write(d.join(".editorconfig"), sans)?;
+        assert_eq!(indent_style_or(&d.join("a.rs"), tab2), tab2);
+        assert_eq!(indent_style(&d.join("a.rs")), st(false, 4));
+        fs::write(
+            d.join(".editorconfig"),
+            "root = true\n[*]\nindent_size = 3\n",
+        )?;
+        assert_eq!(indent_style_or(&d.join("a.rs"), tab2), st(true, 3));
         Ok(())
     }
 
