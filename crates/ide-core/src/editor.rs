@@ -29,6 +29,15 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             explorer::listed(state, dir, result);
             vec![]
         }
+        Event::ConfigLoaded { settings, errors } => {
+            state.explorer.width = settings.explorer_width;
+            state.explorer.show_hidden = settings.show_hidden;
+            if !errors.is_empty() {
+                state.status = format!("Configuration : {}", errors.join(" ; "));
+            }
+            state.settings = settings;
+            vec![]
+        }
         Event::FsDone(result) => {
             // `fs_done` écrase le statut : la note des onglets est ajoutée après.
             state.status.clear();

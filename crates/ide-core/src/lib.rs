@@ -115,6 +115,11 @@ pub enum Event {
     },
     /// Réponse à `CreateFile` / `CreateDir` / `Rename` / `Trash`.
     FsDone(Result<FsChange, String>),
+    /// Configuration chargée au démarrage ; `errors` : problèmes à signaler sans bloquer (clé inconnue, TOML invalide…).
+    ConfigLoaded {
+        settings: Settings,
+        errors: Vec<String>,
+    },
 }
 
 /// Effets demandés par `update`, exécutés par l'app.
@@ -146,6 +151,31 @@ pub enum Command {
     },
     /// Vers la corbeille, jamais de suppression définitive.
     Trash(PathBuf),
+}
+
+/// Réglages lus dans `config.toml` (utilisateur puis projet) par l'app ; chaque clé a un défaut.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Settings {
+    /// `"dark"` ou `"light"`.
+    pub theme: String,
+    /// Icônes Nerd Font (`false` = repli ASCII, NF-12).
+    pub nerd_icons: bool,
+    /// Indentation par défaut, quand aucun `.editorconfig` ne s'applique.
+    pub indent: Indent,
+    pub explorer_width: u16,
+    pub show_hidden: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            theme: "dark".into(),
+            nerd_icons: true,
+            indent: Indent::default(),
+            explorer_width: 30,
+            show_hidden: false,
+        }
+    }
 }
 
 /// Partie de l'écran qui reçoit le clavier.
@@ -180,6 +210,7 @@ pub struct State {
     /// Barre de recherche ouverte (Ctrl+F / Ctrl+H).
     pub search: Option<Search>,
     pub explorer: Explorer,
+    pub settings: Settings,
     /// Coloration des lignes visibles du document actif, calculée par l'app avant chaque rendu :
     /// plages en OCTETS de la rope, triées, sans chevauchement, et catégorie (`"keyword"`, `"string"`…).
     pub highlights: Vec<(std::ops::Range<usize>, &'static str)>,
