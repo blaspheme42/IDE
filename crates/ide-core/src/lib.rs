@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn autres_touches_dans_le_statut() {
         let cas = [
-            (key(Key::Char('b'), true, false, false), "Ctrl+B"),
+            (key(Key::Char('k'), true, false, false), "Ctrl+K"),
             (key(Key::F(12), false, false, false), "F12"),
             (key(Key::Enter, true, false, false), "Ctrl+Entrée"),
             (key(Key::Esc, false, false, false), "Échap"),
