@@ -81,7 +81,19 @@ pub fn rename(from: &Path, to: &Path) -> Result<(), String> {
     if to.symlink_metadata().is_ok() {
         return Err("renommage refusé : la cible existe déjà".to_string());
     }
-    let src = std::fs::canonicalize(from).map_err(|e| io_message("renommage impossible", &e))?;
+    // Le lien lui-même, pas sa cible : seul son dossier parent est résolu.
+    let name = from
+        .file_name()
+        .ok_or("renommage impossible : chemin sans nom")?;
+    let from_parent = match from.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    let src = std::fs::canonicalize(from_parent)
+        .map_err(|e| io_message("renommage impossible", &e))?
+        .join(name);
+    from.symlink_metadata()
+        .map_err(|e| io_message("renommage impossible", &e))?;
     let dst_parent = match to.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => Path::new("."),
@@ -260,6 +272,26 @@ mod tests {
         create_dir(&sub)?;
         assert!(sub.is_dir());
         assert!(err(create_dir(&sub)).contains("existe déjà"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lien_vers_dossier_deplace_dans_sa_cible() -> Result {
+        // Le lien est déplacé, pas sa cible : aller dans `vrai/` n'est pas « dans lui-même ».
+        let d = tempfile::tempdir()?;
+        let vrai = d.path().join("vrai");
+        fs::create_dir(&vrai)?;
+        let lien = d.path().join("lien");
+        std::os::unix::fs::symlink(&vrai, &lien)?;
+        rename(&lien, &vrai.join("lien2"))?;
+        assert!(
+            vrai.join("lien2")
+                .symlink_metadata()?
+                .file_type()
+                .is_symlink()
+        );
+        assert!(vrai.is_dir());
         Ok(())
     }
 

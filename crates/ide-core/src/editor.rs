@@ -42,6 +42,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             }
             cmds
         }
+        Event::Paste(text) if state.focus == crate::Focus::Explorer => {
+            explorer::paste(state, &text);
+            vec![]
+        }
         Event::Paste(text) if state.search.is_some() => {
             search::input(state, text.lines().next().unwrap_or_default());
             vec![]
@@ -75,8 +79,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             }
             vec![]
         }
-        Event::IndentDetected(indent) => {
-            state.doc.indent = indent;
+        Event::IndentDetected { path, indent } => {
+            if let Some(doc) = tabs::doc_mut(state, &path) {
+                doc.indent = indent;
+            }
             vec![]
         }
         Event::OpenFailed {
@@ -95,7 +101,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
         Event::Saved { path, version } => {
-            if let Some(doc) = tabs::doc_mut(state, &path) {
+            if let Some(doc) = tabs::saved_doc(state, &path, version) {
                 doc.mark_saved(version);
                 state.status = format!("Sauvegardé : {}", doc.display_name());
             }
@@ -216,6 +222,7 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
             Key::Char('s' | 'S') => match doc.path.clone() {
                 Some(path) => {
                     state.status = "Sauvegarde…".into();
+                    doc.seal_history();
                     return vec![Command::Save {
                         path,
                         contents: doc.to_saved_text(),
@@ -333,6 +340,7 @@ mod tests {
         update(&mut s, k(Key::Char('c')));
         update(&mut s, k(Key::Tab));
         assert!(s.doc.is_dirty());
+        let version = s.doc.version();
         let cmds = update(&mut s, ctrl('s'));
         assert_eq!(s.status, "Sauvegarde…");
         assert_eq!(
@@ -340,7 +348,7 @@ mod tests {
             vec![Command::Save {
                 path: PathBuf::from("/x/a.txt"),
                 contents: "abc \r\n".into(),
-                version: 2,
+                version,
             }]
         );
         update(&mut s, k(Key::Char('d')));
@@ -348,7 +356,7 @@ mod tests {
             &mut s,
             Event::Saved {
                 path: "/x/a.txt".into(),
-                version: 2,
+                version,
             },
         );
         assert_eq!(s.status, "Sauvegardé : a.txt");
@@ -593,7 +601,25 @@ mod tests {
             width: 8,
             tab_width: 8,
         };
-        update(&mut s, Event::IndentDetected(indent));
+        update(
+            &mut s,
+            Event::IndentDetected {
+                path: "/x/autre.txt".into(),
+                indent,
+            },
+        );
+        assert_eq!(
+            s.doc.indent,
+            crate::Indent::default(),
+            "autre fichier : onglet actif intact"
+        );
+        update(
+            &mut s,
+            Event::IndentDetected {
+                path: "/x/a.txt".into(),
+                indent,
+            },
+        );
         assert_eq!(s.doc.indent, indent);
     }
 

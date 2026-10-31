@@ -77,12 +77,17 @@ fn failure(cmd: Command, error: String) -> Event {
 /// Lit `path` et son style `.editorconfig` : FileOpened (ou OpenFailed) puis IndentDetected,
 /// qui doit suivre l'ouverture puisque celle-ci remet le document à zéro.
 pub fn open_file(path: PathBuf) -> Vec<Event> {
+    // Chemin canonique : un même fichier atteint par un lien symbolique n'ouvre pas un second onglet.
+    let path = std::fs::canonicalize(&path).unwrap_or(path);
     let style = ide_workspace::indent_style(&path);
     let opened = match files::read_file(&path) {
-        Ok(text) => Event::FileOpened { path, text },
+        Ok(text) => Event::FileOpened {
+            path: path.clone(),
+            text,
+        },
         Err(error) => Event::OpenFailed {
             create: error == files::NEW_FILE,
-            path,
+            path: path.clone(),
             error,
         },
     };
@@ -91,7 +96,7 @@ pub fn open_file(path: PathBuf) -> Vec<Event> {
         width: style.width,
         tab_width: style.tab_width,
     };
-    vec![opened, Event::IndentDetected(indent)]
+    vec![opened, Event::IndentDetected { path, indent }]
 }
 
 /// Racine de l'explorateur et fichier à ouvrir pour `ide [dossier|fichier]` ;
@@ -197,7 +202,7 @@ mod tests {
                 text: "salut".into()
             }
         );
-        assert!(matches!(evs[1], Event::IndentDetected(_)));
+        assert!(matches!(evs[1], Event::IndentDetected { .. }));
         Ok(())
     }
 
@@ -207,7 +212,7 @@ mod tests {
         let absent = dir.path().join("neuf.txt");
         let evs = run(Command::OpenFile(absent.clone()), 2).await;
         assert!(matches!(&evs[0], Event::OpenFailed { path, create: true, .. } if *path == absent));
-        assert!(matches!(evs[1], Event::IndentDetected(_)));
+        assert!(matches!(evs[1], Event::IndentDetected { .. }));
         let bin = dir.path().join("bin");
         std::fs::write(&bin, [0xff, 0xfe])?;
         let evs = run(Command::OpenFile(bin), 2).await;

@@ -27,6 +27,8 @@ pub fn save_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
         Some(d) if !d.as_os_str().is_empty() => d,
         _ => Path::new("."),
     };
+    // Dossier mis à la corbeille pendant que le fichier était ouvert : Ctrl+S le recrée.
+    std::fs::create_dir_all(dir)?;
     let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
     tmp.write_all(contents.as_bytes())?;
     if let Ok(meta) = std::fs::metadata(&path) {
@@ -74,6 +76,15 @@ mod tests {
         save_atomic(&p, "new")?;
         let mode = std::fs::metadata(&p)?.permissions().mode() & 0o777;
         assert_eq!(mode, 0o750);
+        Ok(())
+    }
+
+    #[test]
+    fn dossier_disparu_recree_a_la_sauvegarde() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let p = dir.path().join("src/a.rs");
+        save_atomic(&p, "fn main() {}")?;
+        assert_eq!(std::fs::read_to_string(&p)?, "fn main() {}");
         Ok(())
     }
 

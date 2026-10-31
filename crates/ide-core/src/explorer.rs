@@ -123,9 +123,23 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
         resize(state, if k.key == Key::Left { -2 } else { 2 });
         return Some(vec![]);
     }
-    // Ctrl+Q, Ctrl+S, Ctrl+W… restent globaux, même pendant une invite ; Alt+1..9 change d'onglet.
-    if k.mods.ctrl || k.mods.alt {
+    // Raccourcis globaux (fichier, onglets) seulement : les raccourcis d'édition (Ctrl+X/V/Z/A…)
+    // modifieraient le document caché sans qu'on le voie.
+    if k.mods.alt {
         return None;
+    }
+    if k.mods.ctrl {
+        return match k.key {
+            Key::Char('q' | 'Q' | 's' | 'S' | 'w' | 'W')
+            | Key::Tab
+            | Key::PageUp
+            | Key::PageDown => None,
+            Key::Char('f' | 'F' | 'h' | 'H') => {
+                state.focus = Focus::Editor;
+                None
+            }
+            _ => Some(vec![]),
+        };
     }
     if state.explorer.prompt.is_some() {
         return Some(prompt_key(state, k));
@@ -217,6 +231,15 @@ fn prompt_key(state: &mut State, k: KeyInput) -> Vec<Command> {
     vec![]
 }
 
+/// Collage avec le focus explorateur : dans l'invite de saisie (première ligne), jamais dans le document.
+pub(crate) fn paste(state: &mut State, text: &str) {
+    if let Some(p) = &mut state.explorer.prompt
+        && p.kind != PromptKind::ConfirmTrash
+    {
+        p.input.push_str(text.lines().next().unwrap_or_default());
+    }
+}
+
 /// Ouvre l'invite : création dans le dossier sélectionné (ou celui du fichier sélectionné, ou la racine),
 /// sinon opération sur l'entrée sélectionnée.
 fn open_prompt(state: &mut State, kind: PromptKind) {
@@ -256,7 +279,18 @@ fn submit(state: &mut State) -> Vec<Command> {
     let Some(p) = &ex.prompt else {
         return vec![];
     };
-    match target_command(ex, p.kind, p.input.trim()) {
+    let cmd = target_command(ex, p.kind, p.input.trim()).and_then(|cmd| match &cmd {
+        // Le disque ne connaît pas un onglet pas encore écrit : deux onglets sur un chemin s'écraseraient.
+        Command::Rename { to, .. }
+            if std::iter::once(&state.doc)
+                .chain(state.tabs.iter().map(|t| &t.doc))
+                .any(|d| d.path.as_deref().is_some_and(|p| p.starts_with(to))) =>
+        {
+            Err(format!("{} est ouvert dans un onglet", to.display()))
+        }
+        _ => Ok(cmd),
+    });
+    match cmd {
         Ok(cmd) => {
             ex.prompt = None;
             if let Command::CreateFile(path) = &cmd {
@@ -697,6 +731,52 @@ mod tests {
         list(&mut s, ROOT.into(), &["a/", "b/", "f.txt"]);
         s.focus = Focus::Explorer;
         s
+    }
+
+    #[test]
+    fn focus_explorateur_protege_le_document() {
+        let mut s = setup();
+        s.doc = crate::Document::from_text(Some(p("f.txt")), "texte");
+        // Raccourcis d'édition ignorés, collage hors invite ignoré.
+        for c in ['x', 'v', 'z', 'a'] {
+            assert_eq!(
+                update(&mut s, Event::Key(kin(Key::Char(c), true, false, false))),
+                vec![]
+            );
+        }
+        update(&mut s, Event::Paste("collé".into()));
+        assert_eq!(s.doc.rope().to_string(), "texte");
+        // Collage dans l'invite : première ligne seulement.
+        press(&mut s, Key::Char('n'));
+        update(&mut s, Event::Paste("nom.rs\nreste".into()));
+        assert_eq!(
+            s.explorer.prompt.as_ref().map(|p| p.input.as_str()),
+            Some("nom.rs")
+        );
+        assert_eq!(s.doc.rope().to_string(), "texte");
+        // Ctrl+F rend le focus à l'éditeur pour que la barre de recherche reçoive la saisie.
+        press(&mut s, Key::Esc);
+        update(&mut s, Event::Key(kin(Key::Char('f'), true, false, false)));
+        assert_eq!(s.focus, Focus::Editor);
+        assert!(s.search.is_some());
+    }
+
+    #[test]
+    fn renommer_vers_un_onglet_ouvert_refuse() {
+        let mut s = setup();
+        // Onglet sur un fichier pas encore écrit : le disque ne le connaît pas.
+        s.doc = crate::Document::from_text(Some(p("neuf.txt")), "");
+        let i = s
+            .explorer
+            .nodes
+            .iter()
+            .position(|n| n.entry.name == "f.txt");
+        s.explorer.selected = i.unwrap_or_default();
+        press(&mut s, Key::Char('r'));
+        input(&mut s, "neuf.txt");
+        assert!(press(&mut s, Key::Enter).is_empty());
+        assert!(s.status.contains("ouvert dans un onglet"), "{}", s.status);
+        assert!(s.explorer.prompt.is_some());
     }
 
     fn names(s: &State) -> Vec<(String, usize)> {

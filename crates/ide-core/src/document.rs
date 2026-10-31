@@ -162,7 +162,20 @@ impl Document {
         self.version != self.saved_version
     }
 
+    /// Ce document est passé par l'état `version` (courant, à annuler ou à rétablir).
+    pub fn knows_version(&self, version: u64) -> bool {
+        self.version == version
+            || (self.history.undo.iter().chain(&self.history.redo))
+                .any(|e| e.version_before == version || e.version_after == version)
+    }
+
     /// Appelé sur `Event::Saved` : seule la version effectivement écrite est marquée propre.
+    /// Ctrl+S : la version envoyée reste un état distinct de l'historique, même si l'on continue à taper
+    /// avant la confirmation (sinon la frappe fusionnerait et `Saved` ne retrouverait plus ce document).
+    pub fn seal_history(&mut self) {
+        self.history.seal();
+    }
+
     pub fn mark_saved(&mut self, version: u64) {
         self.saved_version = version;
         // La frappe suivante ouvre un nouveau groupe : on peut annuler jusqu'à l'état sauvegardé.

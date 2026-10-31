@@ -84,8 +84,12 @@ pub enum Event {
         path: PathBuf,
         text: String,
     },
-    /// Style d'indentation du fichier ouvert (.editorconfig), lu par l'app.
-    IndentDetected(Indent),
+    /// Style d'indentation (.editorconfig) du fichier `path`, lu par l'app : appliqué à l'onglet de ce
+    /// chemin, pas à l'actif (ouverture ratée, ou deux ouvertures entrelacées).
+    IndentDetected {
+        path: PathBuf,
+        indent: Indent,
+    },
     /// `create` : le fichier n'existe pas encore, Ctrl+S le créera. Sinon le chemin est oublié,
     /// pour qu'un Ctrl+S n'écrase pas un fichier qu'on n'a pas pu lire (non UTF-8, permission…).
     OpenFailed {

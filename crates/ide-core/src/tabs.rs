@@ -125,6 +125,18 @@ fn find(state: &State, path: &Path) -> Option<usize> {
     Some(if i < state.active { i } else { i + 1 })
 }
 
+/// Document qui a envoyé la sauvegarde `version` de `path`. Ni un autre onglet du même chemin,
+/// ni un document renommé entre-temps (le fichier écrit n'est plus le sien) : il reste alors modifié.
+pub(crate) fn saved_doc<'a>(
+    state: &'a mut State,
+    path: &Path,
+    version: u64,
+) -> Option<&'a mut Document> {
+    std::iter::once(&mut state.doc)
+        .chain(state.tabs.iter_mut().map(|t| &mut t.doc))
+        .find(|d| d.path.as_deref() == Some(path) && d.knows_version(version))
+}
+
 /// Document de l'onglet ouvert sur `path`, actif ou non.
 pub(crate) fn doc_mut<'a>(state: &'a mut State, path: &Path) -> Option<&'a mut Document> {
     if state.doc.path.as_deref() == Some(path) {
@@ -256,6 +268,7 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::FsChange;
     use crate::{Command, Event, Modifiers, MouseInput, MouseKind, Search, editor_size, update};
 
     fn touche(key: Key, ctrl: bool, alt: bool, shift: bool) -> Event {
@@ -364,6 +377,51 @@ mod tests {
         );
         assert!(!tab_list(&s)[2].dirty);
         assert_eq!(actif(&s), "a.txt");
+    }
+
+    #[test]
+    fn saved_ne_marque_que_le_document_qui_a_sauvegarde() {
+        let mut s = trois();
+        update(&mut s, touche(Key::Char('x'), false, false, false));
+        let cmds = update(&mut s, ctrl('s'));
+        let [Command::Save { version, .. }] = cmds[..] else {
+            panic!("{cmds:?}")
+        };
+        // Pendant l'écriture, c.txt est renommé : le fichier écrit n'est plus le sien, il reste modifié.
+        update(
+            &mut s,
+            Event::FsDone(Ok(FsChange::Renamed {
+                from: "/x/c.txt".into(),
+                to: "/x/d.txt".into(),
+            })),
+        );
+        let saved = |path: &str| Event::Saved {
+            path: path.into(),
+            version,
+        };
+        update(&mut s, saved("/x/c.txt"));
+        assert!(s.doc.is_dirty());
+        // Un autre onglet du même chemin (b.txt modifié) n'est pas marqué propre par la sauvegarde de d.txt.
+        update(&mut s, touche(Key::Char('2'), false, true, false));
+        update(&mut s, touche(Key::Char('y'), false, false, false));
+        update(&mut s, saved("/x/b.txt"));
+        assert!(s.doc.is_dirty());
+        // On continue de taper après Ctrl+S : la confirmation retrouve quand même le document.
+        let cmds = update(&mut s, ctrl('s'));
+        let [Command::Save { version, .. }] = cmds[..] else {
+            panic!("{cmds:?}")
+        };
+        update(&mut s, touche(Key::Char('z'), false, false, false));
+        update(
+            &mut s,
+            Event::Saved {
+                path: "/x/b.txt".into(),
+                version,
+            },
+        );
+        assert_eq!(s.status, "Sauvegardé : b.txt");
+        update(&mut s, ctrl('z'));
+        assert!(!s.doc.is_dirty());
     }
 
     #[test]

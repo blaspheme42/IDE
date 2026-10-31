@@ -35,16 +35,16 @@ pub(crate) struct Entry {
 pub(crate) struct History {
     pub undo: Vec<Entry>,
     pub redo: Vec<Entry>,
-    /// Dernier identifiant d'état distribué : jamais réutilisé, donc une version = un contenu.
-    last_id: u64,
     /// Interdit de fusionner la prochaine édition avec le groupe précédent.
     sealed: bool,
 }
 
 impl History {
+    /// Identifiant d'état unique sur TOUS les documents : une version désigne un seul document et un seul
+    /// contenu, si bien qu'une confirmation de sauvegarde ne peut pas marquer propre un autre onglet.
     pub fn next_id(&mut self) -> u64 {
-        self.last_id += 1;
-        self.last_id
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Coupe le regroupement (déplacement, annulation, sauvegarde).
