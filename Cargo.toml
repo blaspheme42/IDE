@@ -34,6 +34,17 @@ proptest = "1"
 arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
 ignore = "0.4"
 trash = { version = "5.2", default-features = false, features = ["chrono"] }
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-html = "0.23"
+tree-sitter-css = "0.25"
+tree-sitter-json = "0.24"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-md = "0.5"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
