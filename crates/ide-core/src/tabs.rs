@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::{Document, Key, KeyInput, State, explorer_width, search};
+use crate::{Document, FsChange, Key, KeyInput, State, explorer_width, search};
 
 /// Ligne de la barre d'onglets, en haut de la zone éditeur.
 pub const TAB_BAR_HEIGHT: u16 = 1;
@@ -182,6 +182,36 @@ fn close(state: &mut State) {
 /// Nombre de documents modifiés, tous onglets confondus.
 pub(crate) fn dirty_count(state: &State) -> usize {
     tab_list(state).iter().filter(|t| t.dirty).count()
+}
+
+/// Suit une opération disque dans tous les onglets. Idempotente : un chemin déjà déplacé ne correspond plus.
+pub(crate) fn on_fs_change(state: &mut State, change: &FsChange) {
+    let docs = std::iter::once(&mut state.doc).chain(state.tabs.iter_mut().map(|t| &mut t.doc));
+    let mut trashed = false;
+    for doc in docs {
+        let Some(path) = &doc.path else { continue };
+        match change {
+            FsChange::Renamed { from, to } => {
+                if let Ok(rest) = path.strip_prefix(from) {
+                    // `join("")` ajouterait un `/` final.
+                    doc.path = Some(if rest.as_os_str().is_empty() {
+                        to.clone()
+                    } else {
+                        to.join(rest)
+                    });
+                }
+            }
+            // Contenu et chemin gardés, document marqué modifié : Ctrl+Q avertit et Ctrl+S recrée le fichier.
+            FsChange::Trashed(p) if path.starts_with(p) => {
+                doc.mark_unsaved();
+                trashed = true;
+            }
+            _ => {}
+        }
+    }
+    if trashed {
+        state.status = "fichier supprimé du disque : Ctrl+S le recréera".into();
+    }
 }
 
 /// Raccourcis d'onglets ; `false` = touche laissée à la suite.
@@ -394,6 +424,105 @@ mod tests {
         assert_eq!(actif(&s), "c.txt");
         // Le texte reste intact.
         assert_eq!(s.doc.rope().to_string(), "ccc");
+    }
+
+    fn fs(s: &mut State, change: FsChange) {
+        update(s, Event::FsDone(Ok(change)));
+    }
+    fn chemins(s: &State) -> Vec<Option<PathBuf>> {
+        let mut v: Vec<_> = s.tabs.iter().map(|t| t.doc.path.clone()).collect();
+        v.insert(s.active, s.doc.path.clone());
+        v
+    }
+
+    #[test]
+    fn renommage_d_un_fichier_ouvert_actif_et_inactif() {
+        let mut s = trois();
+        let renomme = |s: &mut State, from: &str, to: &str| {
+            fs(
+                s,
+                FsChange::Renamed {
+                    from: from.into(),
+                    to: to.into(),
+                },
+            )
+        };
+        renomme(&mut s, "/x/c.txt", "/x/c2.txt");
+        renomme(&mut s, "/x/a.txt", "/x/a2.txt");
+        // `/x/b` n'est pas un dossier parent de `/x/b.txt`.
+        renomme(&mut s, "/x/b", "/x/z");
+        let attendu = ["/x/a2.txt", "/x/b.txt", "/x/c2.txt"].map(|p| Some(PathBuf::from(p)));
+        assert_eq!(chemins(&s), attendu);
+        assert_eq!(actif(&s), "c2.txt");
+        assert!(tab_list(&s).iter().all(|t| !t.dirty));
+    }
+
+    #[test]
+    fn renommage_d_un_dossier_contenant_des_fichiers_ouverts() {
+        let mut s = trois();
+        ouvrir(&mut s, "/y/d.txt", "");
+        fs(
+            &mut s,
+            FsChange::Renamed {
+                from: "/x".into(),
+                to: "/w/x".into(),
+            },
+        );
+        let attendu = ["/w/x/a.txt", "/w/x/b.txt", "/w/x/c.txt", "/y/d.txt"];
+        assert_eq!(chemins(&s), attendu.map(|p| Some(PathBuf::from(p))));
+    }
+
+    #[test]
+    fn corbeille_d_un_fichier_ouvert() {
+        let mut s = trois();
+        fs(&mut s, FsChange::Trashed("/x/a.txt".into()));
+        assert!(s.status.contains("Ctrl+S le recréera"), "{}", s.status);
+        assert_eq!(chemins(&s)[0], Some(PathBuf::from("/x/a.txt")));
+        assert_eq!(
+            noms(&s).into_iter().map(|t| t.1).collect::<Vec<_>>(),
+            [true, false, false]
+        );
+        update(&mut s, touche(Key::Char('1'), false, true, false));
+        assert_eq!(s.doc.rope().to_string(), "aaa");
+        assert!(update(&mut s, ctrl('q')).is_empty());
+        assert!(s.status.contains("1 fichier"), "{}", s.status);
+        // Ctrl+S recrée le fichier et le document redevient propre.
+        let cmds = update(&mut s, ctrl('s'));
+        let [Command::Save { version, .. }] = cmds[..] else {
+            panic!("{cmds:?}")
+        };
+        update(
+            &mut s,
+            Event::Saved {
+                path: "/x/a.txt".into(),
+                version,
+            },
+        );
+        assert!(!s.doc.is_dirty());
+    }
+
+    #[test]
+    fn corbeille_d_un_dossier_et_creation_sans_effet() {
+        let mut s = trois();
+        fs(&mut s, FsChange::Created("/x/a.txt".into()));
+        assert!(tab_list(&s).iter().all(|t| !t.dirty));
+        fs(&mut s, FsChange::Trashed("/x".into()));
+        assert!(tab_list(&s).iter().all(|t| t.dirty));
+    }
+
+    #[test]
+    // En attente d'explorer.rs : `explorer::key` doit rendre `None` pour Alt et Ctrl (autre codeur).
+    #[ignore]
+    fn raccourcis_d_onglets_avec_le_focus_explorateur() {
+        let mut s = trois();
+        s.focus = crate::Focus::Explorer;
+        update(&mut s, touche(Key::Char('1'), false, true, false));
+        assert_eq!(actif(&s), "a.txt");
+        update(&mut s, touche(Key::PageDown, true, false, false));
+        assert_eq!(actif(&s), "b.txt");
+        update(&mut s, touche(Key::PageUp, true, false, false));
+        assert_eq!(actif(&s), "a.txt");
+        assert_eq!(s.focus, crate::Focus::Explorer);
     }
 
     #[test]
