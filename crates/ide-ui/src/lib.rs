@@ -10,28 +10,28 @@ use ide_core::{
 };
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use std::ops::Range;
+use theme::Theme;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-/// Styles sobres, lisibles en 16 couleurs : sélection inversée, ligne courante sur fond gris foncé.
-const SELECTION: Style = Style::new().add_modifier(Modifier::REVERSED);
-const CURRENT_LINE: Style = Style::new().bg(Color::DarkGray);
-/// Occurrences de la recherche : la courante sur fond jaune, les autres soulignées en jaune.
-const MATCH: Style = Style::new()
-    .fg(Color::Yellow)
-    .add_modifier(Modifier::UNDERLINED);
-const MATCH_CURRENT: Style = Style::new().fg(Color::Black).bg(Color::Yellow);
-/// Indicateurs `[.*]` `[Aa]` de la barre de recherche.
-const FLAG_ON: Style = Style::new().fg(Color::Black).bg(Color::Gray);
-const FLAG_OFF: Style = Style::new().fg(Color::DarkGray);
-/// Onglet actif dans la barre d'onglets.
-const TAB_ACTIVE: Style = Style::new().add_modifier(Modifier::BOLD.union(Modifier::REVERSED));
-
-/// Dessine toute l'interface à partir de l'état. Pure : aucune I/O.
+/// Dessine toute l'interface avec le thème sombre (la configuration le choisira plus tard).
 pub fn render(state: &State, frame: &mut Frame) {
+    render_with(state, frame, &Theme::dark());
+}
+
+/// Dessine toute l'interface à partir de l'état, avec `theme`. Pure : aucune I/O.
+///
+/// Fond et texte du thème posés sur tout l'écran, comme VSCode : coloration et ligne courante
+/// sont choisies pour ce fond, celui du terminal (clair, transparent…) pourrait les rendre
+/// illisibles. Contrepartie assumée : un terminal transparent devient opaque.
+pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
+    let area = frame.area();
+    frame
+        .buffer_mut()
+        .set_style(area, Style::new().fg(theme.foreground).bg(theme.background));
     let [main, status] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
     let [explorer, editor] = Layout::horizontal([
@@ -53,9 +53,9 @@ pub fn render(state: &State, frame: &mut Frame) {
     .areas(editor);
 
     if explorer.width > 0 {
-        explorer::render(state, frame, explorer);
+        explorer::render(state, frame, explorer, theme);
     }
-    tab_bar(state, tabs, frame);
+    tab_bar(state, tabs, frame, theme);
 
     let doc = &state.doc;
     let rope = doc.rope();
@@ -76,9 +76,9 @@ pub fn render(state: &State, frame: &mut Frame) {
     let mut lines = Vec::new();
     for i in visible {
         let style = if i == cur_line {
-            Style::new().bold()
+            theme.gutter_current
         } else {
-            Style::new()
+            Style::new().fg(theme.gutter)
         };
         // Gouttière : numéro aligné à droite, espace, colonne de diagnostics (vide avant le LSP).
         numbers.push(Line::from(vec![
@@ -98,32 +98,56 @@ pub fn render(state: &State, frame: &mut Frame) {
         let rel = |r: &Range<usize>| r.start.saturating_sub(start)..r.end.saturating_sub(start);
         let sel = selection.as_ref().map_or(0..0, rel);
         // Occurrences touchant la ligne : triées, la première trouvée par recherche binaire.
-        let end = start + rope.line(i).len_chars();
+        let line = rope.line(i);
+        let end = start + line.len_chars();
         let first = matches.partition_point(|m| m.end <= start);
         let hits: Vec<_> = matches[first..]
             .iter()
             .take_while(|m| m.start < end)
             .map(|m| {
                 let style = if Some(m) == current {
-                    MATCH_CURRENT
+                    theme.search_current
                 } else {
-                    MATCH
+                    theme.search_match
                 };
                 (rel(m), style)
             })
             .collect();
+        // Coloration touchant la ligne : octets ramenés en chars de la ligne, bornés à celle-ci
+        // (une plage périmée ne doit pas faire paniquer la rope).
+        let b0 = rope.line_to_byte(i);
+        let b1 = b0 + line.len_bytes();
+        let first = state.highlights.partition_point(|(r, _)| r.end <= b0);
+        let colors: Vec<_> = state.highlights[first..]
+            .iter()
+            .take_while(|(r, _)| r.start < b1)
+            .map(|(r, cat)| {
+                let c = |b: usize| rope.byte_to_char(b.clamp(b0, b1)) - start;
+                (c(r.start)..c(r.end), theme.syntax(cat))
+            })
+            .collect();
+        let find = |v: &[(Range<usize>, Style)], k| {
+            v.iter().find(|(r, _)| r.contains(&k)).map(|(_, s)| *s)
+        };
+        let eol = line
+            .len_chars()
+            .checked_sub(1)
+            .filter(|k| sel.contains(k))
+            .map(|_| theme.selection);
         lines.push(Line::from(visible_slice(
-            rope.line(i).chars(),
+            line.chars(),
             state.scroll_col,
             text.width as usize,
             doc.tab_width(),
+            eol,
             |k| {
+                // Priorité : sélection > occurrence (courante ou non) > coloration seule.
+                let base = find(&colors, k).unwrap_or_default();
                 if sel.contains(&k) {
-                    return SELECTION;
+                    base.patch(theme.selection)
+                } else {
+                    find(&hits, k).map_or(base, |s| base.patch(s))
                 }
-                hits.iter()
-                    .find(|(r, _)| r.contains(&k))
-                    .map_or(Style::new(), |(_, s)| *s)
             },
         )));
     }
@@ -139,7 +163,7 @@ pub fn render(state: &State, frame: &mut Frame) {
                 height: 1,
                 ..text
             },
-            CURRENT_LINE,
+            Style::new().bg(theme.current_line),
         );
     }
     frame.render_widget(Paragraph::new(lines), text);
@@ -147,7 +171,7 @@ pub fn render(state: &State, frame: &mut Frame) {
     // Focus explorateur : le curseur est celui de son invite, ou masqué.
     let editor_focus = state.focus == ide_core::Focus::Editor;
     if let Some(s) = &state.search {
-        search_bar(s, bar, frame, editor_focus);
+        search_bar(s, bar, frame, editor_focus, theme);
     } else if editor_focus
         && (state.scroll_line..state.scroll_line + text.height as usize).contains(&cur_line)
         && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_col)
@@ -169,18 +193,22 @@ pub fn render(state: &State, frame: &mut Frame) {
         cur_line + 1,
         cur_col + 1
     );
-    frame.render_widget(Paragraph::new(left), status);
+    frame.render_widget(Paragraph::new(left).style(theme.status_bar), status);
     frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), status);
 }
 
 /// Barre d'onglets ` nom ● │ nom2 │ …`, défilée comme `tab_spans` pour garder l'actif visible.
-fn tab_bar(state: &State, area: Rect, frame: &mut Frame) {
+fn tab_bar(state: &State, area: Rect, frame: &mut Frame, theme: &Theme) {
     let mut spans = Vec::new();
     for t in tab_list(state) {
         if !spans.is_empty() {
-            spans.push(Span::styled("│", Style::new().fg(Color::DarkGray)));
+            spans.push(Span::styled("│", Style::new().fg(theme.border)));
         }
-        let style = if t.active { TAB_ACTIVE } else { Style::new() };
+        let style = if t.active {
+            theme.tab_active
+        } else {
+            theme.tab_inactive
+        };
         spans.push(Span::styled(tab_label(&t), style));
     }
     frame.render_widget(
@@ -191,10 +219,13 @@ fn tab_bar(state: &State, area: Rect, frame: &mut Frame) {
 
 /// Barre de recherche : `Rechercher : <query>` + indicateurs et compteur à droite,
 /// puis `Remplacer  : <replace>` en mode remplacer. Curseur du terminal à la fin du champ actif.
-fn search_bar(s: &Search, area: Rect, frame: &mut Frame, cursor: bool) {
-    let flag = |on, t| Span::styled(t, if on { FLAG_ON } else { FLAG_OFF });
+fn search_bar(s: &Search, area: Rect, frame: &mut Frame, cursor: bool, theme: &Theme) {
+    // Indicateurs `[.*]` `[Aa]` : actif en vidéo inverse du thème, inactif estompé.
+    let on = Style::new().fg(theme.background).bg(theme.foreground);
+    let off = Style::new().fg(theme.muted);
+    let flag = |is_on, t| Span::styled(t, if is_on { on } else { off });
     let count = match (&s.error, s.current) {
-        (Some(e), _) => Span::styled(e.clone(), Style::new().fg(Color::Red)),
+        (Some(e), _) => Span::styled(e.clone(), Style::new().fg(theme.error)),
         _ if s.query.is_empty() => Span::raw(""),
         (None, Some(i)) => Span::raw(format!("{}/{}", i + 1, s.matches.len())),
         (None, None) => Span::raw("Aucun résultat"),
@@ -257,13 +288,14 @@ fn tail(s: &str, max: usize) -> &str {
 
 /// Partie d'une ligne entre les colonnes d'affichage `start` et `start + width`, en spans stylés.
 /// Tabulations développées en espaces (taquets tous les `tab`) ; caractère large coupé à gauche → espaces.
-/// `style_of(k)` : style du char d'index `k` de la ligne ; un saut de ligne sélectionné
-/// marque une cellule après la fin de ligne, comme VSCode.
+/// `style_of(k)` : style du char d'index `k` de la ligne ; `eol` : style d'une cellule marquée
+/// après la fin de ligne (saut de ligne sélectionné, comme VSCode).
 fn visible_slice(
     chars: impl Iterator<Item = char>,
     start: usize,
     width: usize,
     tab: usize,
+    eol: Option<Style>,
     style_of: impl Fn(usize) -> Style,
 ) -> Vec<Span<'static>> {
     let end = start + width;
@@ -277,13 +309,13 @@ fn visible_slice(
         if col >= end {
             break;
         }
-        let style = style_of(k);
         if c == '\n' {
-            if style == SELECTION && col >= start {
+            if let Some(style) = eol.filter(|_| col >= start) {
                 push(" ", style);
             }
             break;
         }
+        let style = style_of(k);
         let w = match c {
             '\t' => tab - col % tab,
             _ => c.width().unwrap_or(0),
@@ -304,12 +336,30 @@ fn visible_slice(
 mod tests {
     use super::*;
     use ide_core::Document;
+    use ratatui::buffer::Cell;
+    use ratatui::style::{Color, Modifier};
     use ratatui::{Terminal, backend::TestBackend};
 
     fn draw(state: &State) -> TestBackend {
+        draw_with(state, &Theme::dark())
+    }
+
+    fn draw_with(state: &State, theme: &Theme) -> TestBackend {
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|f| render(state, f)).unwrap();
+        terminal.draw(|f| render_with(state, f, theme)).unwrap();
         terminal.backend().clone()
+    }
+
+    /// Fond de sélection du thème sombre.
+    fn sel_bg() -> Color {
+        Theme::dark().selection.bg.expect("fond de sélection")
+    }
+
+    /// La cellule porte-t-elle le style `s` (couleurs et modificateurs qu'il définit) ?
+    fn a_style(c: &Cell, s: Style) -> bool {
+        s.fg.is_none_or(|f| f == c.fg)
+            && s.bg.is_none_or(|b| b == c.bg)
+            && c.modifier.contains(s.add_modifier)
     }
 
     fn state(doc: Document) -> State {
@@ -380,10 +430,13 @@ mod tests {
         let b = draw(&s);
         let line: String = (30..80).map(|x| b.buffer()[(x, 0)].symbol()).collect();
         assert_eq!(line.trim_end(), " a.rs │ b.rs ●");
-        // Actif en gras inversé, les autres en style normal.
-        let cell = |x: u16| b.buffer()[(x, 0)].modifier;
-        assert!(cell(38).contains(Modifier::BOLD | Modifier::REVERSED));
-        assert!(cell(31).is_empty());
+        // Actif et inactifs aux styles du thème, séparateur couleur de bordure.
+        let t = Theme::dark();
+        let cell = |x: u16| &b.buffer()[(x, 0)];
+        assert!(a_style(cell(38), t.tab_active));
+        assert!(a_style(cell(31), t.tab_inactive));
+        assert!(!cell(31).modifier.contains(Modifier::BOLD));
+        assert_eq!(cell(36).fg, t.border);
         // Trop étroit : la barre défile pour montrer l'actif en entier.
         s.width = 40;
         let mut t = Terminal::new(TestBackend::new(40, 24)).unwrap();
@@ -397,7 +450,7 @@ mod tests {
     #[test]
     fn tranche_visible() {
         let s = |t: &str, start, width| -> String {
-            visible_slice(t.chars(), start, width, 4, |_| Style::new())
+            visible_slice(t.chars(), start, width, 4, None, |_| Style::new())
                 .iter()
                 .map(|s| s.content.as_ref())
                 .collect()
@@ -422,14 +475,10 @@ mod tests {
         draw(&s)
     }
 
-    /// Colonnes de la ligne `y` (relatives à la zone texte) en style inversé, parmi 0..n.
+    /// Colonnes de la ligne `y` (relatives à la zone texte) sur fond de sélection, parmi 0..n.
     fn inverses(b: &TestBackend, y: u16, n: u16) -> Vec<u16> {
         (0..n)
-            .filter(|&x| {
-                b.buffer()[(X + x, Y + y)]
-                    .modifier
-                    .contains(Modifier::REVERSED)
-            })
+            .filter(|&x| b.buffer()[(X + x, Y + y)].bg == sel_bg())
             .collect()
     }
 
@@ -437,8 +486,8 @@ mod tests {
     fn selection_une_ligne() {
         let b = selectionne(Document::from_text(None, "abcdef"), 1..4, 0);
         assert_eq!(inverses(&b, 0, 10), [1, 2, 3]);
-        // Pas de ligne courante surlignée pendant une sélection.
-        assert_eq!(b.buffer()[(X + 8, Y)].bg, Color::Reset);
+        // Pas de ligne courante surlignée pendant une sélection : fond du thème.
+        assert_eq!(b.buffer()[(X + 8, Y)].bg, Theme::dark().background);
     }
 
     #[test]
@@ -470,13 +519,16 @@ mod tests {
         let mut doc = Document::from_text(None, "a\nb");
         doc.move_down(1, false);
         let b = draw(&state(doc));
+        let t = Theme::dark();
         let bg = |x, y| b.buffer()[(x, Y + y)].bg;
-        assert_eq!(bg(X, 1), Color::DarkGray);
-        assert_eq!(bg(79, 1), Color::DarkGray);
-        assert_eq!(bg(X - 1, 1), Color::Reset, "gouttière non surlignée");
-        assert_eq!(bg(X, 0), Color::Reset);
-        // Numéro de ligne courant en gras.
-        assert!(b.buffer()[(33, Y + 1)].modifier.contains(Modifier::BOLD));
+        assert_eq!(bg(X, 1), t.current_line);
+        assert_eq!(bg(79, 1), t.current_line);
+        assert_eq!(bg(X - 1, 1), t.background, "gouttière non surlignée");
+        assert_eq!(bg(X, 0), t.background);
+        assert_eq!(b.buffer()[(X, Y)].fg, t.foreground);
+        // Numéros de ligne : courant au style dédié, les autres en couleur de gouttière.
+        assert!(a_style(&b.buffer()[(33, Y + 1)], t.gutter_current));
+        assert_eq!(b.buffer()[(33, Y)].fg, t.gutter);
     }
 
     #[test]
@@ -524,8 +576,12 @@ mod tests {
         let fg = |x| b.buffer()[(x, 22)].bg;
         let line: String = (30..80).map(|x| b.buffer()[(x, 22)].symbol()).collect();
         let at = |t: &str| 30 + line.find(t).map_or(0, |i| line[..i].chars().count()) as u16;
-        assert_eq!(fg(at("[Aa]")), Color::Gray);
-        assert_eq!(fg(at("[.*]")), Color::Reset);
+        let t = Theme::dark();
+        assert_eq!(fg(at("[Aa]")), t.foreground);
+        assert_eq!(fg(at("[.*]")), t.background);
+        assert_eq!(b.buffer()[(at("[.*]"), 22)].fg, t.muted);
+        // Barre d'état sur toute la largeur.
+        assert!((0..80).all(|x| a_style(&b.buffer()[(x, 23)], t.status_bar)));
         assert!(line.contains("5/120"));
         // La zone de texte s'arrête au-dessus : 21 lignes visibles, sous la barre d'onglets.
         assert_eq!(b.buffer()[(0, 21)].symbol(), "│");
@@ -574,36 +630,149 @@ mod tests {
     fn occurrences_surlignees() {
         let s = recherche(None, 4); // ligne 1, colonne 8
         let b = draw(&s);
+        let t = Theme::dark();
         let cell = |x, y| b.buffer()[(X + x, Y + y)].clone();
-        assert_eq!(cell(8, 1).bg, Color::Yellow);
-        assert_eq!(cell(10, 1).fg, Color::Black);
-        assert_eq!(cell(11, 1).bg, Color::Reset);
-        assert!(cell(0, 1).modifier.contains(Modifier::UNDERLINED));
-        assert_eq!(cell(0, 1).fg, Color::Yellow);
+        assert!(a_style(&cell(8, 1), t.search_current));
+        assert!(a_style(&cell(10, 1), t.search_current));
+        assert_eq!(cell(11, 1).bg, t.background);
+        assert!(a_style(&cell(0, 1), t.search_match));
         assert!(!cell(4, 1).modifier.contains(Modifier::UNDERLINED));
-        // Sur la ligne courante (0), le fond gris reste sous les occurrences ordinaires.
-        assert_eq!(cell(0, 0).bg, Color::DarkGray);
-        assert!(cell(0, 0).modifier.contains(Modifier::UNDERLINED));
+        // Ligne courante (0) : son fond reste hors des occurrences.
+        assert!(a_style(&cell(0, 0), t.search_match));
+        assert_eq!(cell(4, 0).bg, t.current_line);
     }
 
     #[test]
     fn occurrence_courante_hors_ecran_et_selection_prioritaire() {
-        // Courante en ligne 39, hors écran : rien en fond jaune dans la zone de texte.
+        // Courante en ligne 39, hors écran : aucune cellule au style de la courante.
         let mut s = recherche(None, 3 * 39);
         s.doc.set_cursor(8, false);
         s.doc.set_cursor(11, true);
         let b = draw(&s);
+        let courante = Theme::dark()
+            .search_current
+            .bg
+            .expect("fond de la courante");
         for y in Y..22 {
             for x in 0..44 {
-                assert_ne!(b.buffer()[(X + x, y)].bg, Color::Yellow, "({x}, {y})");
+                assert_ne!(b.buffer()[(X + x, y)].bg, courante, "({x}, {y})");
             }
         }
         // La sélection l'emporte sur le surlignage.
-        assert!(b.buffer()[(X + 8, Y)].modifier.contains(Modifier::REVERSED));
+        assert_eq!(b.buffer()[(X + 8, Y)].bg, sel_bg());
         assert!(
             !b.buffer()[(X + 8, Y)]
                 .modifier
                 .contains(Modifier::UNDERLINED)
         );
+    }
+
+    /// État sur `text` avec la coloration `hl` (plages en octets).
+    fn colore(text: &str, hl: &[(Range<usize>, &'static str)]) -> State {
+        let mut s = state(Document::from_text(Some("a.rs".into()), text));
+        s.highlights = hl.to_vec();
+        s
+    }
+
+    /// Couleur de texte des cellules `xs` de la ligne `y` de la zone texte.
+    fn fgs(b: &TestBackend, y: u16, xs: Range<u16>) -> Vec<Color> {
+        xs.map(|x| b.buffer()[(X + x, Y + y)].fg).collect()
+    }
+
+    fn syn(cat: &str) -> Color {
+        Theme::dark().syntax(cat).fg.expect("couleur de catégorie")
+    }
+
+    #[test]
+    fn mot_cle_colore() {
+        let s = colore("fn main() {}", &[(0..2, "keyword"), (3..7, "function")]);
+        let b = draw(&s);
+        let (k, f, t) = (syn("keyword"), syn("function"), Theme::dark().foreground);
+        assert_eq!(fgs(&b, 0, 0..8), [k, k, t, f, f, f, f, t]);
+        // La ligne courante garde son fond sous la coloration.
+        assert_eq!(b.buffer()[(X, Y)].bg, Theme::dark().current_line);
+    }
+
+    #[test]
+    fn coloration_accents_emoji() {
+        // Octets : é 0..2, 🦀 2..6, "café" 6..13 (é sur 2 octets), espace 13, fn 14..16.
+        // Colonnes : é 0, 🦀 1..3, "café" 3..9, espace 9, fn 10..12.
+        let s = colore("é🦀\"café\" fn", &[(6..13, "string"), (14..16, "keyword")]);
+        let b = draw(&s);
+        let (st, k, t) = (syn("string"), syn("keyword"), Theme::dark().foreground);
+        // Cellule de queue de 🦀 (2) remise à zéro par ratatui : seules les cellules de tête comptent.
+        assert_eq!(fgs(&b, 0, 0..2), [t, t]);
+        assert_eq!(fgs(&b, 0, 3..9), [st; 6]);
+        assert_eq!(fgs(&b, 0, 9..12), [t, k, k]);
+    }
+
+    #[test]
+    fn tabulation_avant_mot_cle() {
+        let b = draw(&colore("\tfn x", &[(1..3, "keyword")]));
+        let (k, t) = (syn("keyword"), Theme::dark().foreground);
+        assert_eq!(fgs(&b, 0, 0..7), [t, t, t, t, k, k, t]);
+        assert_eq!(b.buffer()[(X + 4, Y)].symbol(), "f");
+    }
+
+    #[test]
+    fn defilement_coupe_un_mot_colore() {
+        let mut s = colore("fn hello 日本", &[(3..8, "function"), (9..15, "string")]);
+        s.scroll_col = 5;
+        let b = draw(&s);
+        let (f, st, t) = (syn("function"), syn("string"), Theme::dark().foreground);
+        // « llo », espace, 日 coupé à gauche → espace coloré, 本.
+        assert_eq!(fgs(&b, 0, 0..4), [f, f, f, t]);
+        assert_eq!(b.buffer()[(X, Y)].symbol(), "l");
+        s.scroll_col = 10;
+        let b = draw(&s);
+        assert_eq!(b.buffer()[(X, Y)].symbol(), " ");
+        assert_eq!(fgs(&b, 0, 0..2), [st, st]);
+    }
+
+    #[test]
+    fn selection_prioritaire_sur_coloration() {
+        let mut s = colore("fn x", &[(0..2, "keyword")]);
+        s.doc.set_cursor(0, false);
+        s.doc.set_cursor(1, true);
+        let b = draw(&s);
+        let c = |x| b.buffer()[(X + x, Y)].clone();
+        // Fond de sélection, couleur du mot-clé conservée dessous (comme VSCode).
+        assert_eq!((c(0).bg, c(0).fg), (sel_bg(), syn("keyword")));
+        assert_eq!(
+            (c(1).bg, c(1).fg),
+            (Theme::dark().background, syn("keyword"))
+        );
+    }
+
+    #[test]
+    fn plage_hors_ecran_ignoree() {
+        // 40 lignes « fn x » (5 octets) ; défilement à la ligne 10, plage périmée au-delà du texte.
+        let mut s = colore(
+            &"fn x\n".repeat(40),
+            &[
+                (0..2, "keyword"),
+                (50..52, "keyword"),
+                (9_000..9_010, "string"),
+            ],
+        );
+        s.scroll_line = 10;
+        let b = draw(&s);
+        let (k, t) = (syn("keyword"), Theme::dark().foreground);
+        assert_eq!(fgs(&b, 0, 0..3), [k, k, t]);
+        assert_eq!(fgs(&b, 1, 0..3), [t, t, t]);
+    }
+
+    #[test]
+    fn theme_clair() {
+        let t = Theme::light();
+        let b = draw_with(&colore("fn x", &[(0..2, "keyword")]), &t);
+        let c = |x| b.buffer()[(X + x, Y + 1)].clone();
+        assert_eq!(
+            b.buffer()[(X, Y)].fg,
+            t.syntax("keyword").fg.expect("couleur du mot-clé")
+        );
+        assert_eq!(b.buffer()[(X + 3, Y)].fg, t.foreground);
+        // Ligne vide sous le texte : fond et texte du thème clair.
+        assert_eq!((c(0).fg, c(0).bg), (t.foreground, t.background));
     }
 }
