@@ -1,9 +1,11 @@
 //! Binaire de l'IDE : boucle d'événements façon Elm (événement → update → rendu).
 
+mod backup;
 mod clipboard;
 mod files;
 mod highlight;
 mod lsp;
+mod session;
 mod workspace;
 
 use std::path::PathBuf;
@@ -21,7 +23,8 @@ use tracing_appender::non_blocking::WorkerGuard;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let started = std::time::Instant::now();
-    let _log_guard = init_logging()?;
+    let state_dir = state_dir()?;
+    let _log_guard = init_logging(&state_dir)?;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let panic_test = args.iter().any(|a| a == "--panic-test");
     // `ide [dossier|fichier]` : premier argument qui n'est pas une option.
@@ -46,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     {
         tracing::warn!("activation souris / collage : {e}");
     }
-    let result = run(&mut terminal, panic_test, root, file, started).await;
+    let result = run(&mut terminal, panic_test, root, file, started, state_dir).await;
     disable_mouse_and_paste();
     ratatui::restore();
     if let Err(e) = &result {
@@ -70,6 +73,7 @@ async fn run(
     root: PathBuf,
     file: Option<PathBuf>,
     started: std::time::Instant,
+    state_dir: PathBuf,
 ) -> anyhow::Result<()> {
     let size = terminal.size()?;
     let mut state = State {
@@ -121,11 +125,40 @@ async fn run(
         }
     });
     tx.send(Event::OpenRoot(root.clone())).await?;
-    // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
-    if let Some(path) = file {
-        for ev in tokio::task::spawn_blocking(move || workspace::open_file(path)).await? {
-            tx.send(ev).await?;
-        }
+    // Fichiers lus avant de lancer le lecteur : FileOpened passe avant toute touche.
+    // Sans fichier en argument, la session (F-80) ; puis les fichiers qui ont une copie de secours
+    // (NF-07) ; le fichier en argument en dernier, actif.
+    let backup_dir = state_dir.join("backup");
+    let session_file = session::file(&state_dir.join("session"), &root);
+    let (b, sf) = (backup_dir.clone(), session_file.clone());
+    let (opened, offers) =
+        tokio::task::spawn_blocking(move || {
+            let offers = backup::scan(&b);
+            let (views, active) = match file {
+                None => session::load(&sf),
+                Some(_) => (vec![], None),
+            };
+            let mut paths: Vec<PathBuf> = views.iter().map(|v| v.0.clone()).collect();
+            for (p, _) in &offers {
+                if !paths.contains(p) && file.as_ref() != Some(p) {
+                    paths.push(p.clone());
+                }
+            }
+            paths.extend(file);
+            let mut events: Vec<Event> = paths.into_iter().flat_map(workspace::open_file).collect();
+            events.extend(views.into_iter().map(|(path, cursor, scroll_line)| {
+                Event::RestoreView {
+                    path,
+                    cursor,
+                    scroll_line,
+                }
+            }));
+            events.extend(active.map(Event::ActivateTab));
+            (events, offers)
+        })
+        .await?;
+    for ev in opened {
+        tx.send(ev).await?;
     }
     // Erreurs de config renvoyées en dernier : « Ouvert : … » ne doit pas les masquer.
     if matches!(&config, Event::ConfigLoaded { errors, .. } if !errors.is_empty()) {
@@ -150,13 +183,31 @@ async fn run(
     let (save_tx, save_rx) = mpsc::unbounded_channel();
     let saver = tokio::spawn(save_worker(save_rx, tx.clone()));
     let clip = clipboard::spawn(tx.clone());
+    let (backup_tx, backup_rx) = mpsc::unbounded_channel();
+    let backup_worker = tokio::spawn(backup::worker(backup_rx));
+    let send_backup = |jobs: Vec<backup::Job>| {
+        for job in jobs {
+            let _ = backup_tx.send(job);
+        }
+    };
+    let mut backups = backup::Backups::new(backup_dir, offers);
+    let mut backup_tick = tokio::time::interval(backup::PERIOD);
+    backup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let result = async {
         loop {
-            // On garde un `tx` pour les sauvegardes, donc `recv` ne finit jamais : on surveille la fin du lecteur.
-            let ev = tokio::select! {
-                biased;
-                Some(ev) = rx.recv() => ev,
-                _ = &mut reader => break,
+            // Copies trouvées au démarrage : proposées une à une, avant les événements suivants.
+            let ev = match backups.next_offer(&state) {
+                Some(ev) => ev,
+                // On garde un `tx` pour les sauvegardes, donc `recv` ne finit jamais : on surveille la fin du lecteur.
+                None => tokio::select! {
+                    biased;
+                    _ = backup_tick.tick() => {
+                        send_backup(backups.tick(&state));
+                        continue;
+                    }
+                    Some(ev) = rx.recv() => ev,
+                    _ = &mut reader => break,
+                },
             };
             let mut quit = false;
             let cmds = ide_core::update(&mut state, ev);
@@ -189,9 +240,17 @@ async fn run(
                     cmd @ (Command::RequestCompletion { .. }
                     | Command::RequestHover { .. }
                     | Command::RequestDefinition { .. }) => lsp.request(cmd),
+                    Command::DiscardBackup(path) => send_backup(vec![backups.discard(&path)]),
                 }
             }
+            send_backup(backups.cleanup(&state));
             if quit {
+                // Sortie normale : l'utilisateur a renoncé aux modifications non sauvegardées.
+                // Après un crash ou un kill, on ne passe pas ici : les copies restent.
+                send_backup(backups.quit(&state));
+                if let Err(e) = session::save(&session_file, &state) {
+                    tracing::warn!("écriture de la session : {e}");
+                }
                 break;
             }
             highlighter.sync(&mut state);
@@ -203,7 +262,11 @@ async fn run(
     // Avant de quitter, on laisse finir les sauvegardes en attente ; sans `rx`, leurs événements sont ignorés.
     drop(rx);
     drop(save_tx);
+    drop(backup_tx);
     lsp.shutdown().await;
+    if let Err(e) = backup_worker.await {
+        tracing::error!("tâche des copies de secours : {e}");
+    }
     if let Err(e) = saver.await {
         tracing::error!("tâche de sauvegarde : {e}");
     }
@@ -307,21 +370,25 @@ fn convert_mods(m: KeyModifiers) -> Modifiers {
     }
 }
 
-/// Logs vers `$XDG_STATE_HOME/ide/ide.log` (sinon `~/.local/state/ide/ide.log`), jamais stdout/stderr.
-fn init_logging() -> anyhow::Result<WorkerGuard> {
+/// Dossier d'état : `$XDG_STATE_HOME/ide` (sinon `~/.local/state/ide`) ; logs, copies, sessions.
+fn state_dir() -> anyhow::Result<PathBuf> {
     let base = match std::env::var_os("XDG_STATE_HOME").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
         None => {
             PathBuf::from(std::env::var_os("HOME").context("HOME non défini")?).join(".local/state")
         }
     };
-    let dir = base.join("ide");
-    std::fs::create_dir_all(&dir).with_context(|| format!("création de {}", dir.display()))?;
+    Ok(base.join("ide"))
+}
+
+/// Logs vers `<état>/ide.log`, jamais stdout/stderr.
+fn init_logging(dir: &std::path::Path) -> anyhow::Result<WorkerGuard> {
+    std::fs::create_dir_all(dir).with_context(|| format!("création de {}", dir.display()))?;
     // Le builder renvoie une erreur là où `rolling::never` paniquerait.
     let appender = tracing_appender::rolling::RollingFileAppender::builder()
         .rotation(tracing_appender::rolling::Rotation::NEVER)
         .filename_prefix("ide.log")
-        .build(&dir)
+        .build(dir)
         .with_context(|| format!("ouverture du log dans {}", dir.display()))?;
     let (writer, guard) = tracing_appender::non_blocking(appender);
     tracing_subscriber::fmt()
