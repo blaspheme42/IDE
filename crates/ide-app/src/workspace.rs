@@ -53,7 +53,10 @@ fn execute(cmd: Command) -> Vec<Event> {
         Command::Quit
         | Command::Save { .. }
         | Command::CopyToClipboard(_)
-        | Command::RequestPaste => {
+        | Command::RequestPaste
+        | Command::RequestCompletion { .. }
+        | Command::RequestHover { .. }
+        | Command::RequestDefinition { .. } => {
             vec![]
         }
     }

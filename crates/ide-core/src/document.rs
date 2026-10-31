@@ -572,6 +572,39 @@ impl Document {
         });
     }
 
+    /// Position LSP (ligne, colonne en unités UTF-16) de l'index de `char` `pos` (borné au texte).
+    pub fn lsp_position(&self, pos: usize) -> crate::Position {
+        let pos = pos.min(self.rope.len_chars());
+        let line = self.rope.char_to_line(pos);
+        let start = self.rope.line_to_char(line);
+        let character = self
+            .rope
+            .slice(start..pos)
+            .chars()
+            .map(char::len_utf16)
+            .sum();
+        crate::Position { line, character }
+    }
+
+    /// Index de `char` d'une position LSP ; ligne ou colonne hors bornes → ramenée au texte
+    /// (fin de ligne, fin de document), une colonne au milieu d'une paire UTF-16 → avant le caractère.
+    pub fn char_at_lsp(&self, p: crate::Position) -> usize {
+        if p.line >= self.rope.len_lines() {
+            return self.rope.len_chars();
+        }
+        let start = self.rope.line_to_char(p.line);
+        let mut units = 0;
+        let mut chars = 0;
+        for c in self.line_text(p.line).chars() {
+            units += c.len_utf16();
+            if units > p.character {
+                break;
+            }
+            chars += 1;
+        }
+        start + chars
+    }
+
     /// Éditions depuis le dernier appel, dans l'ordre, à appliquer à l'arbre syntaxique.
     pub fn take_edits(&mut self) -> Vec<TextEdit> {
         std::mem::take(&mut self.edits)
@@ -758,6 +791,26 @@ mod tests {
         assert_eq!(d.display_col(0, 5), 7);
         let d = doc("\tx");
         assert_eq!(d.display_col(0, 1), 4);
+    }
+
+    #[test]
+    fn positions_lsp_en_utf16() {
+        use crate::Position;
+        // 🦀 = 2 unités UTF-16, é = 1 ; CRLF compte comme une seule fin de ligne.
+        let d = doc("é🦀x\r\nab");
+        let pos = |line, character| Position { line, character };
+        assert_eq!(d.lsp_position(0), pos(0, 0));
+        assert_eq!(d.lsp_position(2), pos(0, 3));
+        assert_eq!(d.lsp_position(3), pos(0, 4));
+        assert_eq!(d.lsp_position(5), pos(1, 1));
+        assert_eq!(d.lsp_position(99), pos(1, 2));
+        for i in 0..=d.rope().len_chars() {
+            assert_eq!(d.char_at_lsp(d.lsp_position(i)), i, "aller-retour {i}");
+        }
+        // Milieu de la paire de 🦀 → avant ; colonne et ligne trop grandes → bornées.
+        assert_eq!(d.char_at_lsp(pos(0, 2)), 1);
+        assert_eq!(d.char_at_lsp(pos(0, 50)), 3);
+        assert_eq!(d.char_at_lsp(pos(9, 0)), d.rope().len_chars());
     }
 
     #[test]

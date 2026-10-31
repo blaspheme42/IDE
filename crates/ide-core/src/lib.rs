@@ -6,12 +6,17 @@ mod document;
 mod editor;
 mod explorer;
 mod history;
+mod lsp;
 mod search;
 mod tabs;
 
 pub use document::{Document, Indent, LineEnding, TextEdit};
 pub use editor::gutter_width;
 pub use explorer::{Explorer, FsChange, FsEntry, Node, Prompt, PromptKind};
+pub use lsp::{
+    Completion, CompletionItem, Diagnostic, Hover, Location, LspServer, Position, Severity,
+    default_servers,
+};
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
 
@@ -122,6 +127,26 @@ pub enum Event {
         path: PathBuf,
         text: Option<String>,
     },
+    /// Diagnostics publiés par le serveur pour `path` (remplacent les précédents).
+    Diagnostics {
+        path: PathBuf,
+        items: Vec<Diagnostic>,
+    },
+    /// Réponse à `RequestCompletion` ; ignorée si le document a changé de version entre-temps.
+    CompletionResult {
+        path: PathBuf,
+        version: u64,
+        items: Vec<CompletionItem>,
+    },
+    /// Réponse à `RequestHover` (`None` : rien à afficher).
+    HoverResult {
+        path: PathBuf,
+        text: Option<String>,
+    },
+    /// Réponse à `RequestDefinition`.
+    DefinitionResult(Vec<Location>),
+    /// État du serveur pour la barre de statut (« rust-analyzer ✓ », « clangd : arrêté »…), vide = aucun.
+    LspStatus(String),
     /// Configuration chargée au démarrage ; `errors` : problèmes à signaler sans bloquer (clé inconnue, TOML invalide…).
     ConfigLoaded {
         settings: Settings,
@@ -158,6 +183,20 @@ pub enum Command {
     },
     /// Vers la corbeille, jamais de suppression définitive.
     Trash(PathBuf),
+    /// Requêtes LSP sur le document `path` à la `version` courante (l'app aura déjà synchronisé ce texte).
+    RequestCompletion {
+        path: PathBuf,
+        version: u64,
+        pos: Position,
+    },
+    RequestHover {
+        path: PathBuf,
+        pos: Position,
+    },
+    RequestDefinition {
+        path: PathBuf,
+        pos: Position,
+    },
     /// Relire un fichier ouvert, changé sur le disque → `Event::FileChanged`.
     Reload(PathBuf),
 }
@@ -173,6 +212,8 @@ pub struct Settings {
     pub indent: Indent,
     pub explorer_width: u16,
     pub show_hidden: bool,
+    /// Serveurs de langage par langage (`[lsp.*]`), défauts : `default_servers()`.
+    pub lsp: Vec<LspServer>,
 }
 
 impl Default for Settings {
@@ -183,6 +224,7 @@ impl Default for Settings {
             indent: Indent::default(),
             explorer_width: 30,
             show_hidden: false,
+            lsp: default_servers(),
         }
     }
 }
@@ -220,6 +262,16 @@ pub struct State {
     pub search: Option<Search>,
     pub explorer: Explorer,
     pub settings: Settings,
+    /// Diagnostics LSP par fichier (F-42).
+    pub diagnostics: std::collections::HashMap<PathBuf, Vec<Diagnostic>>,
+    /// Liste de complétion ouverte (F-41).
+    pub completion: Option<Completion>,
+    /// Infobulle de survol ouverte (F-43).
+    pub hover: Option<Hover>,
+    /// Panneau « Problèmes » affiché (Ctrl+Shift+M).
+    pub problems_open: bool,
+    /// État du serveur de langage, pour la barre de statut.
+    pub lsp_status: String,
     /// Coloration des lignes visibles du document actif, calculée par l'app avant chaque rendu :
     /// plages en OCTETS de la rope, triées, sans chevauchement, et catégorie (`"keyword"`, `"string"`…).
     pub highlights: Vec<(std::ops::Range<usize>, &'static str)>,

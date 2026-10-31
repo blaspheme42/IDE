@@ -3,6 +3,7 @@
 mod clipboard;
 mod files;
 mod highlight;
+mod lsp;
 mod workspace;
 
 use std::path::PathBuf;
@@ -113,7 +114,7 @@ async fn run(
             Err(e) => tracing::warn!("watcher : {e}"),
         }
     });
-    tx.send(Event::OpenRoot(root)).await?;
+    tx.send(Event::OpenRoot(root.clone())).await?;
     // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
     if let Some(path) = file {
         for ev in tokio::task::spawn_blocking(move || workspace::open_file(path)).await? {
@@ -128,6 +129,8 @@ async fn run(
 
     let mut highlighter = highlight::Highlighter::default();
     highlighter.sync(&mut state);
+    let mut lsp = lsp::LspManager::new(tx.clone(), root.clone(), state.settings.lsp.clone());
+    lsp.sync(&state);
     terminal.draw(|f| ide_ui::render(&state, f))?;
     tracing::info!(
         "premier rendu en {:?} (NF-01 : < 100 ms)",
@@ -173,12 +176,16 @@ async fn run(
                     | Command::Rename { .. }
                     | Command::Trash(_)
                     | Command::Reload(_)) => workspace::spawn(cmd, tx.clone()),
+                    cmd @ (Command::RequestCompletion { .. }
+                    | Command::RequestHover { .. }
+                    | Command::RequestDefinition { .. }) => lsp.request(cmd),
                 }
             }
             if quit {
                 break;
             }
             highlighter.sync(&mut state);
+            lsp.sync(&state);
             terminal.draw(|f| ide_ui::render(&state, f))?;
         }
         anyhow::Ok(())

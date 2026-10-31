@@ -2,7 +2,7 @@
 
 use crate::{
     Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, TAB_BAR_HEIGHT,
-    editor_size, explorer, search, tabs,
+    editor_size, explorer, lsp, search, tabs,
 };
 
 /// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace, colonne de diagnostics.
@@ -18,7 +18,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite.
     let wheel = matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown));
     let version = state.doc.version();
-    let cmds = match event {
+    let mut cmds = match event {
         Event::Key(k) => key(state, k),
         Event::Mouse(m) => explorer::mouse(state, m).unwrap_or_else(|| {
             mouse(state, m);
@@ -36,6 +36,27 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         }
         Event::FileChanged { path, text } => {
             tabs::file_changed(state, path, text);
+            vec![]
+        }
+        Event::Diagnostics { path, items } => {
+            state.diagnostics.insert(path, items);
+            vec![]
+        }
+        Event::CompletionResult {
+            path,
+            version,
+            items,
+        } => {
+            lsp::completion_result(state, path, version, items);
+            vec![]
+        }
+        Event::HoverResult { path, text } => {
+            lsp::hover_result(state, path, text);
+            vec![]
+        }
+        Event::DefinitionResult(locations) => lsp::definition_result(state, locations),
+        Event::LspStatus(s) => {
+            state.lsp_status = s;
             vec![]
         }
         Event::ConfigLoaded { settings, errors } => {
@@ -134,6 +155,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     if state.search.is_some() && state.doc.version() != version {
         search::refresh(state, false);
     }
+    cmds.extend(lsp::after_update(state, version));
     if !wheel {
         scroll_to_cursor(state);
     }
@@ -213,6 +235,9 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         state.status.clear();
     }
     if let Some(cmds) = explorer::key(state, k) {
+        return cmds;
+    }
+    if let Some(cmds) = lsp::key(state, k) {
         return cmds;
     }
     // Avant la recherche, qui prend Tab pour changer de champ.
