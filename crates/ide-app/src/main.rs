@@ -98,8 +98,14 @@ async fn run(
         let err_tx = watch_tx.clone();
         let started = tokio::task::spawn_blocking(move || {
             // Depuis le thread du watcher, `blocking_send` n'attend que lui, jamais la boucle.
+            let _ =
+                watch_tx.blocking_send(Event::GitBranch(ide_workspace::git_branch(&watch_root)));
+            let root = watch_root.clone();
             ide_workspace::watch(&watch_root, move |paths| {
                 let _ = watch_tx.blocking_send(Event::DiskChanged(paths));
+                // shortcut: le watcher ignore .git/ ; la branche est relue à chaque changement de fichiers
+                // (un checkout en modifie presque toujours), pas sur un simple changement de HEAD.
+                let _ = watch_tx.blocking_send(Event::GitBranch(ide_workspace::git_branch(&root)));
             })
         })
         .await;

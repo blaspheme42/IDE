@@ -49,6 +49,12 @@ fn execute(cmd: Command) -> Vec<Event> {
             FsChange::Renamed { from, to },
         ),
         Command::Trash(p) => done(ide_workspace::trash(&p), FsChange::Trashed(p)),
+        Command::ListFiles { root, show_hidden } => {
+            vec![Event::FileList(ide_workspace::list_files(
+                &root,
+                show_hidden,
+            ))]
+        }
         Command::Reload(path) => reload(path).into_iter().collect(),
         Command::Quit
         | Command::Save { .. }
@@ -56,8 +62,7 @@ fn execute(cmd: Command) -> Vec<Event> {
         | Command::RequestPaste
         | Command::RequestCompletion { .. }
         | Command::RequestHover { .. }
-        | Command::RequestDefinition { .. }
-        | Command::ListFiles { .. } => {
+        | Command::RequestDefinition { .. } => {
             vec![]
         }
     }
@@ -89,6 +94,7 @@ fn failure(cmd: Command, error: String) -> Event {
             error,
             create: false,
         },
+        Command::ListFiles { .. } => Event::FileList(vec![]),
         // Rien à relire : `FileChanged { text: None }` marquerait à tort le fichier comme disparu.
         Command::Reload(_) => Event::Tick,
         _ => Event::FsDone(Err(error)),

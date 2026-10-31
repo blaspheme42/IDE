@@ -3,9 +3,11 @@
 mod config;
 mod editorconfig;
 mod fs_tree;
+mod project;
 mod watcher;
 
 pub use config::{load_config, load_config_from};
 pub use editorconfig::{IndentStyle, indent_style, indent_style_or};
 pub use fs_tree::{DirEntry, create_dir, create_file, list_dir, rename, trash};
+pub use project::{git_branch, list_files};
 pub use watcher::{Watcher, watch};
