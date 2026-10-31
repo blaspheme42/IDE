@@ -72,8 +72,9 @@ fn apply_file(s: &mut Settings, path: &Path, errors: &mut Vec<String>) {
             "editor" => editor_key,
             "explorer" => explorer_key,
             "lsp" => lsp_key,
-            // Sections du cahier pas encore gérées : acceptées, ignorées.
-            "keys" | "icons" => continue,
+            "keys" => keys_key,
+            // Section du cahier pas encore gérée : acceptée, ignorée.
+            "icons" => continue,
             _ => {
                 err(section, "section inconnue");
                 continue;
@@ -116,6 +117,19 @@ fn editor_key(s: &mut Settings, key: &str, v: &Value) -> Result<(), String> {
         },
         _ => return Err("clé inconnue".into()),
     }
+    Ok(())
+}
+
+/// `[keys]` : `"ctrl+shift+k" = "nom_de_commande"` (noms de la palette de commandes).
+fn keys_key(s: &mut Settings, key: &str, v: &Value) -> Result<(), String> {
+    let k = ide_core::KeyInput::parse(key)
+        .ok_or("touche non reconnue (ex. \"ctrl+shift+k\", \"f5\")")?;
+    let name = str_of(v)?;
+    if ide_core::command_by_name(name).is_none() {
+        return Err(format!("commande inconnue : {name}"));
+    }
+    s.keys.retain(|(x, _)| *x != k);
+    s.keys.push((k, name.into()));
     Ok(())
 }
 
@@ -273,10 +287,34 @@ mod tests {
 
     #[test]
     fn sections_futures_ignorees() -> Result<()> {
-        let cfg = "[editor]\nformat_on_save = true\n[keys]\n\"ctrl+p\" = \"open_file_picker\"\n\
+        let cfg = "[editor]\nformat_on_save = true\n\
                    [lsp.rust]\ncommand = \"rust-analyzer\"\n\
                    [icons.extensions]\nrs = { glyph = \"x\", color = \"#dea584\" }\n";
         assert_eq!(load(Some(cfg), None)?, (Settings::default(), vec![]));
+        Ok(())
+    }
+
+    #[test]
+    fn raccourcis_personnalises() -> Result<()> {
+        let cfg = "[keys]\n\"ctrl+shift+k\" = \"close_tab\"\n\"F5\" = \"save\"\n\
+                   \"hyper+x\" = \"save\"\n\"ctrl+j\" = \"delete_line\"\n";
+        let (s, errors) = load(Some(cfg), None)?;
+        let names: Vec<_> = s
+            .keys
+            .iter()
+            .map(|(k, n)| (k.to_string(), n.as_str()))
+            .collect();
+        assert!(
+            names.contains(&("Ctrl+Shift+K".into(), "close_tab")),
+            "{names:?}"
+        );
+        assert!(names.contains(&("F5".into(), "save")), "{names:?}");
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("commande inconnue : delete_line"))
+        );
         Ok(())
     }
 

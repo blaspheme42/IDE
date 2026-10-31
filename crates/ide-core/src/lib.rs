@@ -228,6 +228,8 @@ pub struct Settings {
     pub show_hidden: bool,
     /// Serveurs de langage par langage (`[lsp.*]`), défauts : `default_servers()`.
     pub lsp: Vec<LspServer>,
+    /// Raccourcis personnalisés (`[keys]`) : touche → nom de commande de la palette.
+    pub keys: Vec<(KeyInput, String)>,
 }
 
 impl Default for Settings {
@@ -239,6 +241,7 @@ impl Default for Settings {
             explorer_width: 30,
             show_hidden: false,
             lsp: default_servers(),
+            keys: Vec::new(),
         }
     }
 }
@@ -341,6 +344,52 @@ pub fn editor_size(state: &State) -> (u16, u16) {
 /// Seule fonction qui modifie l'état. Synchrone, rapide, sans I/O.
 pub fn update(state: &mut State, event: Event) -> Vec<Command> {
     editor::update(state, event)
+}
+
+impl KeyInput {
+    /// Lit un raccourci de config.toml : `"ctrl+shift+k"`, `"alt+1"`, `"f12"`, `"ctrl+space"`, `"ctrl+pagedown"`…
+    /// (insensible à la casse). `None` si la touche est inconnue.
+    pub fn parse(s: &str) -> Option<Self> {
+        let mut mods = Modifiers::default();
+        let parts: Vec<String> = s.split('+').map(|p| p.trim().to_lowercase()).collect();
+        let (name, prefix) = parts.split_last()?;
+        for m in prefix {
+            match m.as_str() {
+                "ctrl" | "control" => mods.ctrl = true,
+                "alt" => mods.alt = true,
+                "shift" => mods.shift = true,
+                _ => return None,
+            }
+        }
+        let key = match name.as_str() {
+            "space" => Key::Char(' '),
+            "enter" | "return" => Key::Enter,
+            "esc" | "escape" => Key::Esc,
+            "backspace" => Key::Backspace,
+            "tab" => Key::Tab,
+            "up" => Key::Up,
+            "down" => Key::Down,
+            "left" => Key::Left,
+            "right" => Key::Right,
+            "delete" | "del" => Key::Delete,
+            "home" => Key::Home,
+            "end" => Key::End,
+            "pageup" => Key::PageUp,
+            "pagedown" => Key::PageDown,
+            f if f.len() > 1 && f.starts_with('f') => {
+                Key::F(f[1..].parse().ok().filter(|n| (1..=24).contains(n))?)
+            }
+            c => {
+                let mut chars = c.chars();
+                let ch = chars.next()?;
+                if chars.next().is_some() {
+                    return None;
+                }
+                Key::Char(ch)
+            }
+        };
+        Some(Self { key, mods })
+    }
 }
 
 /// Description lisible, ex. "Ctrl+Alt+Shift+Entrée".

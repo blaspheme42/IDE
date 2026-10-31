@@ -238,6 +238,11 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     {
         k.mods = crate::Modifiers::default();
     }
+    // `[keys]` : la touche personnalisée rejoue le raccourci d'origine de sa commande.
+    let custom = state.settings.keys.iter().find(|(key, _)| *key == k);
+    if let Some(info) = custom.and_then(|(_, name)| crate::command_by_name(name)) {
+        k = info.key;
+    }
     let ctrl = |c: char| k.mods.ctrl && !k.mods.alt && k.key == Key::Char(c);
     if !(ctrl('q') || ctrl('Q')) && state.quit_armed {
         state.quit_armed = false;
@@ -620,6 +625,28 @@ mod tests {
             gutter_width(&Document::from_text(None, &"\n".repeat(9_999))),
             7
         );
+    }
+
+    #[test]
+    fn raccourci_personnalise_rejoue_la_commande() {
+        let mut s = opened("abc");
+        let f5 = crate::KeyInput::parse("f5").expect("f5");
+        s.settings.keys.push((f5, "select_all".into()));
+        update(&mut s, Event::Key(f5));
+        assert_eq!(s.doc.selection(), Some(0..3));
+        for (texte, attendu) in [
+            ("ctrl+shift+k", "Ctrl+Shift+K"),
+            ("Alt+1", "Alt+1"),
+            ("ctrl+space", "Ctrl+Espace"),
+            ("ctrl+pagedown", "Ctrl+Page suiv."),
+            ("f12", "F12"),
+        ] {
+            let k = crate::KeyInput::parse(texte).map(|k| k.to_string());
+            assert_eq!(k.as_deref(), Some(attendu), "{texte}");
+        }
+        for invalide in ["", "ctrl+", "hyper+x", "f99", "ctrl+ab"] {
+            assert_eq!(crate::KeyInput::parse(invalide), None, "{invalide}");
+        }
     }
 
     #[test]
