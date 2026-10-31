@@ -71,8 +71,9 @@ fn apply_file(s: &mut Settings, path: &Path, errors: &mut Vec<String>) {
         {
             "editor" => editor_key,
             "explorer" => explorer_key,
+            "lsp" => lsp_key,
             // Sections du cahier pas encore gérées : acceptées, ignorées.
-            "keys" | "lsp" | "icons" => continue,
+            "keys" | "icons" => continue,
             _ => {
                 err(section, "section inconnue");
                 continue;
@@ -114,6 +115,39 @@ fn editor_key(s: &mut Settings, key: &str, v: &Value) -> Result<(), String> {
             _ => return Err("attendu \"nerd\" ou \"ascii\"".into()),
         },
         _ => return Err("clé inconnue".into()),
+    }
+    Ok(())
+}
+
+/// `[lsp.<langage>]` : `command` (obligatoire), `args` (liste de chaînes) ; remplace le serveur par défaut du langage.
+fn lsp_key(s: &mut Settings, language: &str, v: &Value) -> Result<(), String> {
+    let Value::Table(t) = v else {
+        return Err("doit être une section [lsp.<langage>]".into());
+    };
+    if let Some(k) = t.keys().find(|k| !matches!(k.as_str(), "command" | "args")) {
+        return Err(format!("clé inconnue : {k}"));
+    }
+    let command = str_of(t.get("command").ok_or("`command` manquant")?)?;
+    let args = match t.get("args") {
+        None => vec![],
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|x| {
+                x.as_str()
+                    .map(String::from)
+                    .ok_or("`args` : liste de chaînes attendue")
+            })
+            .collect::<Result<_, _>>()?,
+        Some(_) => return Err("`args` : liste de chaînes attendue".into()),
+    };
+    let server = ide_core::LspServer {
+        language: language.to_lowercase(),
+        command: command.into(),
+        args,
+    };
+    match s.lsp.iter_mut().find(|x| x.language == server.language) {
+        Some(x) => *x = server,
+        None => s.lsp.push(server),
     }
     Ok(())
 }
@@ -243,6 +277,21 @@ mod tests {
                    [lsp.rust]\ncommand = \"rust-analyzer\"\n\
                    [icons.extensions]\nrs = { glyph = \"x\", color = \"#dea584\" }\n";
         assert_eq!(load(Some(cfg), None)?, (Settings::default(), vec![]));
+        Ok(())
+    }
+
+    #[test]
+    fn serveurs_lsp() -> Result<()> {
+        let cfg = "[lsp.python]\ncommand = \"pylsp\"\n[lsp.go]\ncommand = \"gopls\"\nargs = [\"serve\"]\n\
+                   [lsp.c]\nargs = [1]\n[lsp.rust]\ncommande = \"x\"\n";
+        let (s, errors) = load(Some(cfg), None)?;
+        let get = |l: &str| s.lsp.iter().find(|x| x.language == l).cloned();
+        assert_eq!(get("python").map(|x| x.command), Some("pylsp".into()));
+        assert_eq!(get("go").map(|x| x.args), Some(vec!["serve".into()]));
+        // Erreurs : serveur par défaut gardé.
+        assert_eq!(get("c").map(|x| x.command), Some("clangd".into()));
+        assert_eq!(get("rust").map(|x| x.command), Some("rust-analyzer".into()));
+        assert_eq!(errors.len(), 2, "{errors:?}");
         Ok(())
     }
 
