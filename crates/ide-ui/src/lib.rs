@@ -2,6 +2,7 @@
 
 mod explorer;
 pub mod icons;
+pub mod theme;
 
 use ide_core::{
     LineEnding, Search, State, TAB_BAR_HEIGHT, explorer_width, gutter_width, search_bar_height,
