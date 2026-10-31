@@ -79,8 +79,15 @@ fn lang_of(path: &Path) -> Option<String> {
     Language::from_path(path).map(|l| l.name().to_lowercase())
 }
 
+/// Au-delà, un document n'est pas confié au serveur (comme la coloration, NF-03) : la synchronisation complète
+/// recopierait et sérialiserait tout le texte à chaque frappe (≈200 ms sur 60 Mo).
+const MAX_SYNC_BYTES: usize = 5 << 20;
+
+/// Documents ouverts confiés aux serveurs de langage.
 fn docs(state: &State) -> impl Iterator<Item = &Document> {
-    std::iter::once(&state.doc).chain(state.tabs.iter().map(|t| &t.doc))
+    std::iter::once(&state.doc)
+        .chain(state.tabs.iter().map(|t| &t.doc))
+        .filter(|d| d.rope().len_bytes() <= MAX_SYNC_BYTES)
 }
 
 /// Diff pur entre ce que le serveur sait (`tracked`) et les documents ouverts dont le langage est prêt.
