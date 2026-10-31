@@ -176,7 +176,7 @@ impl Client {
                 "general": { "positionEncodings": ["utf-16"] },
                 "textDocument": {
                     "synchronization": { "didSave": true },
-                    "completion": { "completionItem": { "snippetSupport": true } },
+                    "completion": { "completionItem": { "snippetSupport": false } },
                     "hover": { "contentFormat": ["plaintext", "markdown"] },
                     "definition": { "linkSupport": true },
                     "publishDiagnostics": {},

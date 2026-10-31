@@ -36,6 +36,8 @@ pub struct CompletionItem {
     pub detail: Option<String>,
     /// Texte inséré à la place du mot en cours (sans snippets : `$1`… déjà retirés par l'app).
     pub insert_text: String,
+    /// Début de la plage à remplacer donné par le serveur (`textEdit`), sinon le début du mot tapé.
+    pub replace_start: Option<Position>,
 }
 
 /// Liste de complétion ouverte.
@@ -108,6 +110,8 @@ pub struct LspPending {
     completion_anchor: Option<usize>,
     /// Document et curseur de la requête de survol en attente.
     hover_at: Option<(PathBuf, usize)>,
+    /// Document et version de la requête de définition en attente : réponse ignorée s'ils ont changé.
+    definition_from: Option<(PathBuf, u64)>,
 }
 
 fn is_ident(c: char) -> bool {
@@ -192,14 +196,22 @@ fn accept(state: &mut State) {
     let selected = state.completion.as_ref().map_or(0, |c| c.selected);
     let text = visible_completions(state)
         .get(selected)
-        .map(|i| i.insert_text.clone());
+        .map(|i| (i.insert_text.clone(), i.replace_start));
     let Some(c) = state.completion.take() else {
         return;
     };
-    if let Some(text) = text {
+    if let Some((text, start)) = text {
         let cursor = state.doc.cursor();
+        // Plage du serveur si elle finit sur la ligne avant le curseur (ex. `'st` → `'static`), sinon le mot tapé.
+        let start = start
+            .map(|p| state.doc.char_at_lsp(p))
+            .filter(|&s| {
+                s <= cursor
+                    && state.doc.rope().char_to_line(s) == state.doc.rope().char_to_line(cursor)
+            })
+            .unwrap_or(c.anchor);
         state.doc.seal_history();
-        state.doc.edit(c.anchor.min(cursor)..cursor, &text);
+        state.doc.edit(start.min(cursor)..cursor, &text);
     }
 }
 
@@ -239,8 +251,13 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
     if state.hover.take().is_some() && k.key == Key::Esc && plain {
         return Some(vec![]);
     }
-    state.lsp_pending.typed =
-        matches!(k.key, Key::Char(c) if !c.is_control()) && !ctrl && !alt && state.search.is_none();
+    // Barre de recherche ouverte : ses touches (Entrée, Échap, Tab…) ne doivent pas toucher le document.
+    if state.search.is_some() {
+        state.completion = None;
+        state.lsp_pending.typed = false;
+        return None;
+    }
+    state.lsp_pending.typed = matches!(k.key, Key::Char(c) if !c.is_control()) && !ctrl && !alt;
     if state.completion.is_some() {
         let n = visible_completions(state).len().max(1);
         let sel = state.completion.as_ref().map_or(0, |c| c.selected);
@@ -278,10 +295,11 @@ fn trigger(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
             state.lsp_pending.hover_at = Some((path.clone(), cursor));
             Command::RequestHover { path, pos }
         }
-        Key::F(12) if !ctrl && !alt && !shift => Command::RequestDefinition {
-            path: state.doc.path.clone()?,
-            pos,
-        },
+        Key::F(12) if !ctrl && !alt && !shift => {
+            let path = state.doc.path.clone()?;
+            state.lsp_pending.definition_from = Some((path.clone(), state.doc.version()));
+            Command::RequestDefinition { path, pos }
+        }
         // Selon le terminal : `M` (avec ou sans Shift) ou `m` + Shift.
         Key::Char(c @ ('m' | 'M')) if ctrl && !alt && (shift || c == 'M') => {
             state.problems_open = !state.problems_open;
@@ -344,8 +362,10 @@ pub(crate) fn completion_result(
     items: Vec<CompletionItem>,
 ) {
     let doc = &state.doc;
+    let searching = state.search.is_some();
     let Some(anchor) = state.lsp_pending.completion_anchor.take().filter(|&a| {
-        doc.path.as_ref() == Some(&path)
+        !searching
+            && doc.path.as_ref() == Some(&path)
             && doc.version() == version
             && word_start(doc, doc.cursor()) == a
     }) else {
@@ -375,6 +395,11 @@ pub(crate) fn hover_result(state: &mut State, path: PathBuf, text: Option<String
 
 /// Aller à la définition : ouvre le fichier si besoin et place le curseur.
 pub(crate) fn definition_result(state: &mut State, locations: Vec<Location>) -> Vec<Command> {
+    // On a changé d'onglet ou tapé depuis F12 : sauter maintenant surprendrait au milieu de la frappe.
+    let asked = state.lsp_pending.definition_from.take();
+    if asked != state.doc.path.clone().map(|p| (p, state.doc.version())) {
+        return vec![];
+    }
     let Some(loc) = locations.into_iter().next() else {
         state.status = "Aucune définition".into();
         return vec![];
@@ -449,6 +474,7 @@ mod tests {
             kind: None,
             detail: None,
             insert_text: label.into(),
+            replace_start: None,
         }
     }
     fn reponse(s: &mut State, version: u64, labels: &[&str]) {
@@ -718,6 +744,7 @@ mod tests {
             start: pos(1, 2),
             end: pos(1, 3),
         };
+        update(&mut s, touche(Key::F(12), false, false));
         assert_eq!(
             update(&mut s, Event::DefinitionResult(vec![loc.clone()])),
             [Command::OpenFile("/p/b.rs".into())]
@@ -730,6 +757,7 @@ mod tests {
         // Onglet déjà ouvert : FileOpened l'active et le saut s'applique aussi.
         update(&mut s, touche(Key::PageUp, true, false));
         assert_eq!(s.doc.display_name(), "a.rs");
+        update(&mut s, touche(Key::F(12), false, false));
         update(&mut s, Event::DefinitionResult(vec![loc]));
         ouvrir(&mut s, "/p/b.rs", "x\nabcd");
         assert_eq!((s.doc.display_name().as_str(), s.doc.cursor()), ("b.rs", 4));
@@ -738,8 +766,63 @@ mod tests {
     #[test]
     fn aucune_definition() {
         let mut s = ouvert("/p/a.rs", "a");
+        update(&mut s, touche(Key::F(12), false, false));
         assert!(update(&mut s, Event::DefinitionResult(vec![])).is_empty());
         assert_eq!(s.status, "Aucune définition");
+    }
+
+    #[test]
+    fn definition_perimee_ignoree() {
+        let mut s = ouvert("/p/a.rs", "abc");
+        let loc = Location {
+            path: "/p/a.rs".into(),
+            start: pos(0, 2),
+            end: pos(0, 3),
+        };
+        // Sans F12 en attente, ou après une frappe : la réponse ne fait pas sauter le curseur.
+        update(&mut s, Event::DefinitionResult(vec![loc.clone()]));
+        assert_eq!(s.doc.cursor(), 0);
+        update(&mut s, touche(Key::F(12), false, false));
+        tape(&mut s, "x");
+        update(&mut s, Event::DefinitionResult(vec![loc]));
+        assert_eq!(s.doc.cursor(), 1);
+    }
+
+    #[test]
+    fn complétion_fermée_pendant_la_recherche() {
+        let mut s = ouvert("/p/a.rs", "let x = 1;");
+        s.doc.move_line_end(false);
+        tape(&mut s, "pr");
+        let v = s.doc.version();
+        reponse(&mut s, v, &["print"]);
+        assert!(s.completion.is_some());
+        update(&mut s, touche(Key::Char('f'), true, false));
+        tape(&mut s, "zz");
+        update(&mut s, touche(Key::Enter, false, false));
+        assert_eq!(s.doc.rope().to_string(), "let x = 1;pr");
+        assert!(s.completion.is_none());
+    }
+
+    #[test]
+    fn plage_du_serveur_remplacee() {
+        // `&'st` : le serveur remplace `'st` (apostrophe comprise) par `'static`.
+        let mut s = ouvert("/p/a.rs", "&");
+        s.doc.move_line_end(false);
+        tape(&mut s, "'st");
+        let v = s.doc.version();
+        let path = s.doc.path.clone().unwrap_or_default();
+        let mut it = item("'static");
+        it.replace_start = Some(pos(0, 1));
+        update(
+            &mut s,
+            Event::CompletionResult {
+                path,
+                version: v,
+                items: vec![it],
+            },
+        );
+        update(&mut s, touche(Key::Enter, false, false));
+        assert_eq!(s.doc.rope().to_string(), "&'static");
     }
 
     #[test]

@@ -142,7 +142,22 @@ pub(crate) fn completion(v: &Value) -> Vec<CompletionItem> {
             } else {
                 text.to_string()
             };
+            // `TextEdit` (range) ou `InsertReplaceEdit` (insert).
+            let edit = &it["textEdit"];
+            let range = if edit["range"].is_object() {
+                &edit["range"]
+            } else {
+                &edit["insert"]
+            };
+            let replace_start = range["start"]["line"]
+                .as_u64()
+                .zip(range["start"]["character"].as_u64())
+                .map(|(line, character)| ide_core::Position {
+                    line: line as usize,
+                    character: character as usize,
+                });
             Some(CompletionItem {
+                replace_start,
                 kind: it["kind"].as_u64().and_then(kind_label).map(Into::into),
                 detail: it["detail"].as_str().map(Into::into),
                 insert_text,
