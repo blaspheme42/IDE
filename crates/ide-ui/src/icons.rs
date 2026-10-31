@@ -45,7 +45,7 @@ const NAMES: &[Entry] = &[
     (".editorconfig", "\u{e652}", hex(0xfff2f2)),
     ("readme.md", "\u{f00ba}", hex(0xededed)),
     ("readme", "\u{f00ba}", hex(0xededed)),
-    ("changelog.md", "\u{f48a}", hex(0xdddddd)),
+    ("changelog.md", "\u{f48a}", hex(0x8a8a8a)),
     ("license", "\u{e60a}", hex(0xd0bf41)),
     ("license.md", "\u{e60a}", hex(0xd0bf41)),
     ("package.json", "\u{e71e}", hex(0xe8274b)),
@@ -95,7 +95,7 @@ const EXTS: &[Entry] = &[
     ("ini", "\u{e615}", GREY),
     ("conf", "\u{e615}", GREY),
     ("csv", "\u{e64a}", hex(0x89e051)),
-    ("md", "\u{f48a}", hex(0xdddddd)),
+    ("md", "\u{f48a}", hex(0x8a8a8a)),
     ("tex", "\u{e69b}", hex(0x3d6117)),
     ("sh", "\u{e795}", hex(0x4d5a5e)),
     ("bash", "\u{e795}", hex(0x89e051)),
@@ -142,15 +142,15 @@ const EXTS: &[Entry] = &[
     ("mp3", "\u{f001}", hex(0x66d8ef)),
     ("wav", "\u{f001}", hex(0x66d8ef)),
     ("mp4", "\u{f03d}", hex(0xfd971f)),
-    ("ttf", "\u{f031}", hex(0xececec)),
+    ("ttf", "\u{f031}", hex(0x8a8a8a)),
     ("zip", "\u{f410}", hex(0xeca517)),
     ("tar", "\u{f410}", hex(0xeca517)),
     ("gz", "\u{f410}", hex(0xeca517)),
-    ("lock", "\u{e672}", hex(0xbbbbbb)),
+    ("lock", "\u{e672}", hex(0x8a8a8a)),
     ("txt", "\u{f15c}", hex(0x89e051)),
-    ("log", "\u{f0331}", hex(0xdddddd)),
+    ("log", "\u{f0331}", hex(0x8a8a8a)),
     ("exe", "\u{eae8}", hex(0x9f0500)),
-    ("so", "\u{eae8}", hex(0xdcddd6)),
+    ("so", "\u{eae8}", hex(0x8a8a8a)),
 ];
 
 /// Dossiers spéciaux (même glyphe ouvert ou fermé).
@@ -161,7 +161,7 @@ const DIRS: &[Entry] = &[
     ("target", "\u{f07b}", GREY),
     ("src", "\u{f07b}", RUST),
     ("tests", "\u{f07b}", hex(0x89e051)),
-    ("docs", "\u{f07b}", hex(0xdddddd)),
+    ("docs", "\u{f07b}", hex(0x8a8a8a)),
 ];
 
 fn find(table: &'static [Entry], key: &str) -> Option<&'static Entry> {
