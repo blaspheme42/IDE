@@ -29,7 +29,19 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             explorer::listed(state, dir, result);
             vec![]
         }
-        Event::FsDone(result) => explorer::fs_done(state, result),
+        Event::FsDone(result) => {
+            // `fs_done` écrase le statut : la note des onglets est ajoutée après.
+            state.status.clear();
+            if let Ok(change) = &result {
+                tabs::on_fs_change(state, change);
+            }
+            let note = std::mem::take(&mut state.status);
+            let cmds = explorer::fs_done(state, result);
+            if !note.is_empty() {
+                state.status = format!("{} — {note}", state.status);
+            }
+            cmds
+        }
         Event::Paste(text) if state.search.is_some() => {
             search::input(state, text.lines().next().unwrap_or_default());
             vec![]

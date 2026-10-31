@@ -154,6 +154,11 @@ impl Document {
         self.history.seal();
     }
 
+    /// Fichier disparu du disque : modifié jusqu'à la prochaine sauvegarde (aucune version n'atteint `u64::MAX`).
+    pub fn mark_unsaved(&mut self) {
+        self.saved_version = u64::MAX;
+    }
+
     /// Texte à écrire sur disque, avec les fins de ligne d'origine.
     pub fn to_saved_text(&self) -> String {
         let text = self.rope.to_string();

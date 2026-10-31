@@ -143,9 +143,11 @@ pub fn render(state: &State, frame: &mut Frame) {
     }
     frame.render_widget(Paragraph::new(lines), text);
 
+    // Focus explorateur : le curseur est celui de son invite, ou masqué.
+    let editor_focus = state.focus == ide_core::Focus::Editor;
     if let Some(s) = &state.search {
-        search_bar(s, bar, frame);
-    } else if state.focus == ide_core::Focus::Editor
+        search_bar(s, bar, frame, editor_focus);
+    } else if editor_focus
         && (state.scroll_line..state.scroll_line + text.height as usize).contains(&cur_line)
         && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_col)
     {
@@ -188,7 +190,7 @@ fn tab_bar(state: &State, area: Rect, frame: &mut Frame) {
 
 /// Barre de recherche : `Rechercher : <query>` + indicateurs et compteur à droite,
 /// puis `Remplacer  : <replace>` en mode remplacer. Curseur du terminal à la fin du champ actif.
-fn search_bar(s: &Search, area: Rect, frame: &mut Frame) {
+fn search_bar(s: &Search, area: Rect, frame: &mut Frame, cursor: bool) {
     let flag = |on, t| Span::styled(t, if on { FLAG_ON } else { FLAG_OFF });
     let count = match (&s.error, s.current) {
         (Some(e), _) => Span::styled(e.clone(), Style::new().fg(Color::Red)),
@@ -229,7 +231,7 @@ fn search_bar(s: &Search, area: Rect, frame: &mut Frame) {
             ])),
             row,
         );
-        if i == active {
+        if cursor && i == active {
             let x = row.x + (label.width() + shown.width()) as u16;
             frame.set_cursor_position(Position::new(x.min(row.right().saturating_sub(1)), row.y));
         }
@@ -538,6 +540,15 @@ mod tests {
         let b = draw(&s);
         insta::assert_snapshot!(b);
         assert_eq!(b.cursor_position(), Position::new(30 + 13 + 4, 22));
+    }
+
+    #[test]
+    fn focus_explorateur_curseur_hors_de_la_barre() {
+        let mut s = recherche(None, 0);
+        s.focus = ide_core::Focus::Explorer;
+        let b = draw(&s);
+        // Ni la barre (ligne 22) ni le texte : rien n'est placé, le curseur reste à l'origine.
+        assert_eq!(b.cursor_position(), Position::new(0, 0));
     }
 
     #[test]
