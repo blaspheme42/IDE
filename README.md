@@ -9,6 +9,15 @@ IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration 
 - Rust 1.88 ou plus récent (via [rustup](https://rustup.rs))
 - Une [Nerd Font](https://www.nerdfonts.com) dans le terminal (recommandée, pour les icônes)
 
+## Installation
+
+```sh
+cargo install --path crates/ide-app   # installe le binaire `ide` dans ~/.cargo/bin
+ide ~/mon-projet
+```
+
+Serveurs de langage (facultatifs, détectés automatiquement) : `rustup component add rust-analyzer`, `clangd` (paquet `clangd`), `pyright` (`npm install -g pyright`).
+
 ## Commandes
 
 ```sh
