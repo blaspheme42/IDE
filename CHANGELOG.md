@@ -2,6 +2,18 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; une version par jalon.
 
+## [0.3.0] — 2026-10-31 · J3 Coloration
+
+### Ajouté
+- Coloration syntaxique tree-sitter incrémentale : Rust, Python, C, JavaScript, TypeScript/TSX, HTML, CSS, JSON, TOML, Markdown ; une frappe + recoloration sur 10 000 lignes en ~1,7 ms ; désactivée au-delà de 5 Mo (F-30, NF-03).
+- Thèmes sombre (Dark+) et clair (Light+) embarqués, contrastes vérifiés (WCAG) (F-31).
+- Configuration `~/.config/ide/config.toml`, surchargée par `<projet>/.ide/config.toml` : `editor.theme`, `editor.tab_size`, `editor.insert_spaces`, `editor.icons` (`nerd` | `ascii`), `explorer.width`, `explorer.show_hidden` ; erreurs affichées sans empêcher le démarrage.
+- Rafraîchissement automatique de l'explorateur sur changement disque (F-05).
+- Fichier modifié par un autre programme : rechargé s'il n'a pas de modifications, sinon Alt+R recharge et Alt+K garde votre version ; rien n'est jamais écrasé sans choix explicite (NF-09).
+
+### Performance
+- Premier rendu en ~1,5 ms ; la surveillance du disque démarre en fond (NF-01).
+
 ## [0.2.0] — 2026-10-31 · J2 Explorateur et onglets
 
 ### Ajouté

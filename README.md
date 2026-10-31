@@ -2,7 +2,7 @@
 
 IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration tree-sitter, LSP et terminal intégré, le tout dans votre terminal.
 
-**État :** J2 terminé (explorateur, onglets) · J3 en cours (coloration tree-sitter branchée, thème sombre)
+**État :** J3 terminé (coloration tree-sitter, thèmes, configuration) · prochain jalon : J4 LSP
 
 ## Prérequis
 
