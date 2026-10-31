@@ -133,6 +133,7 @@ mod tests {
             status: "Prêt".into(),
             doc: Document::from_text(Some("a.rs".into()), "fn main() {}\n"),
             palette: Some(Palette {
+                ranked: vec![],
                 kind,
                 query: query.into(),
                 selected,
@@ -223,6 +224,7 @@ mod tests {
         assert!(ligne(&b, 1).contains("┌ Ouvrir un fichier ─"));
         // La palette commandes ne dépend pas de la liste des fichiers.
         s.palette = Some(Palette {
+            ranked: vec![],
             kind: PaletteKind::Commands,
             query: String::new(),
             selected: 0,

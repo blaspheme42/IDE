@@ -21,6 +21,9 @@ pub struct Palette {
     pub query: String,
     /// Index dans `palette_items(state)`.
     pub selected: usize,
+    /// Classement mis en cache (index dans `project_files` ou `commands()`), recalculé seulement quand la
+    /// requête, le type ou la liste des fichiers changent : pas de reclassement complet à chaque rendu.
+    pub ranked: Vec<usize>,
 }
 
 /// Ligne affichée : libellé (nom de fichier ou commande) et détail (dossier relatif ou raccourci).
@@ -62,6 +65,11 @@ const fn cmd(name: &'static str, label: &'static str, key: KeyInput) -> CommandI
 }
 
 static COMMANDS: &[CommandInfo] = &[
+    cmd(
+        "command_palette",
+        "Palette de commandes",
+        with(Key::F(1), false, false),
+    ),
     cmd(
         "open_file_picker",
         "Fichier : ouvrir un fichier du projet",
@@ -221,7 +229,7 @@ pub fn palette_items(state: &State) -> Vec<PaletteItem> {
     let Some(p) = &state.palette else {
         return vec![];
     };
-    let ids = ranked(state, p).into_iter();
+    let ids = p.ranked.iter().copied();
     match p.kind {
         PaletteKind::Files => ids
             .map(|i| {
@@ -244,7 +252,8 @@ pub fn palette_items(state: &State) -> Vec<PaletteItem> {
     }
 }
 
-/// Ouvre (ou bascule vers) une palette ; la liste des fichiers est demandée si absente ou d'une autre racine.
+/// Ouvre (ou bascule vers) une palette. La liste des fichiers est redemandée à chaque ouverture (fichiers créés
+/// ou supprimés entre-temps) ; l'ancienne reste affichée en attendant, sauf si elle vient d'une autre racine.
 fn open(state: &mut State, kind: PaletteKind) -> Vec<Command> {
     let mut cmds = vec![];
     if kind == PaletteKind::Files {
@@ -257,19 +266,22 @@ fn open(state: &mut State, kind: PaletteKind) -> Vec<Command> {
             .first()
             .is_some_and(|f| f.starts_with(&root))
         {
-            cmds.push(Command::ListFiles {
-                root,
-                show_hidden: state.settings.show_hidden,
-            });
+            state.project_files.clear();
         }
+        cmds.push(Command::ListFiles {
+            root,
+            show_hidden: state.settings.show_hidden,
+        });
     }
     let p = state.palette.get_or_insert_with(|| Palette {
         kind,
         query: String::new(),
         selected: 0,
+        ranked: vec![],
     });
     p.kind = kind;
     p.selected = 0;
+    refresh(state);
     cmds
 }
 
@@ -278,7 +290,7 @@ fn accept(state: &mut State) -> Vec<Command> {
     let Some(p) = state.palette.take() else {
         return vec![];
     };
-    let Some(&i) = ranked(state, &p).get(p.selected) else {
+    let Some(&i) = p.ranked.get(p.selected) else {
         return vec![];
     };
     match p.kind {
@@ -304,7 +316,11 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
         };
         return Some(open(state, kind));
     }
-    let n = ranked(state, state.palette.as_ref()?).len().max(1);
+    // F1 : palette de commandes (VSCode), joignable même quand le terminal confond Ctrl+Shift+P et Ctrl+P.
+    if k.key == Key::F(1) && !ctrl && !alt && !shift {
+        return Some(open(state, PaletteKind::Commands));
+    }
+    let n = state.palette.as_ref()?.ranked.len().max(1);
     let p = state.palette.as_mut()?;
     match k.key {
         Key::Esc => state.palette = None,
@@ -316,10 +332,12 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
         Key::Backspace => {
             p.query.pop();
             p.selected = 0;
+            refresh(state);
         }
         Key::Char(c) if !ctrl && !alt && !c.is_control() => {
             p.query.push(c);
             p.selected = 0;
+            refresh(state);
         }
         Key::Char('q' | 'Q') if ctrl && !alt => return None,
         _ => {}
@@ -332,6 +350,18 @@ pub(crate) fn paste(state: &mut State, text: &str) {
     if let Some(p) = &mut state.palette {
         p.query.push_str(text.lines().next().unwrap_or_default());
         p.selected = 0;
+    }
+    refresh(state);
+}
+
+/// Recalcule le classement de la palette ouverte (requête, type ou liste des fichiers changés).
+pub(crate) fn refresh(state: &mut State) {
+    if let Some(p) = &state.palette {
+        let r = ranked(state, p);
+        if let Some(p) = &mut state.palette {
+            p.ranked = r;
+            p.selected = p.selected.min(p.ranked.len().saturating_sub(1));
+        }
     }
 }
 
@@ -386,9 +416,10 @@ mod tests {
         assert!(labels(&s).is_empty());
         update(&mut s, liste(&["a.rs"]));
         assert_eq!(labels(&s), ["a.rs"]);
-        // Liste à jour : rien à redemander.
+        // Réouverture : liste redemandée (fichiers créés entre-temps), l'ancienne reste affichée en attendant.
         update(&mut s, touche(Key::Esc, false, false));
-        assert!(update(&mut s, touche(Key::Char('p'), true, false)).is_empty());
+        assert_eq!(update(&mut s, touche(Key::Char('p'), true, false)), attendu);
+        assert_eq!(labels(&s), ["a.rs"]);
         // Racine changée : liste périmée.
         s.explorer.root = Some("/q".into());
         assert_eq!(

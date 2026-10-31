@@ -40,6 +40,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         }
         Event::FileList(files) => {
             state.project_files = files;
+            palette::refresh(state);
             vec![]
         }
         Event::GitBranch(branch) => {

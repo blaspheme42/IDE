@@ -49,6 +49,18 @@ async fn main() -> anyhow::Result<()> {
     {
         tracing::warn!("activation souris / collage : {e}");
     }
+    // Protocole clavier étendu (kitty, WezTerm, foot…) : sans lui, Ctrl+Shift+P arrive comme Ctrl+P et
+    // Ctrl+Shift+M comme Entrée. Ailleurs, F1 ouvre la palette de commandes, qui donne accès à tout.
+    // shortcut: détection par variables d'environnement plutôt que par requête au terminal, qui attend
+    // jusqu'à 2 s sa réponse (NF-01) ; élargir la liste si un terminal compatible manque.
+    if kitty_protocol_terminal() {
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::PushKeyboardEnhancementFlags(
+                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+            )
+        );
+    }
     let result = run(&mut terminal, panic_test, root, file, started, state_dir).await;
     disable_mouse_and_paste();
     ratatui::restore();
@@ -59,11 +71,25 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Ratatui ne connaît pas la souris : à appeler à la sortie et en cas de panic.
+/// Terminal connu pour gérer le protocole clavier de kitty (désambiguïsation des Ctrl+Shift+…).
+fn kitty_protocol_terminal() -> bool {
+    let var = |k: &str| std::env::var(k).unwrap_or_default().to_lowercase();
+    let (term, program) = (var("TERM"), var("TERM_PROGRAM"));
+    std::env::var_os("KITTY_WINDOW_ID").is_some()
+        || std::env::var_os("WEZTERM_PANE").is_some()
+        || ["kitty", "foot", "ghostty", "alacritty"]
+            .iter()
+            .any(|t| term.contains(t))
+        || ["wezterm", "ghostty"].iter().any(|t| program.contains(t))
+}
+
 fn disable_mouse_and_paste() {
     let _ = crossterm::execute!(
         std::io::stdout(),
         DisableMouseCapture,
-        DisableBracketedPaste
+        DisableBracketedPaste,
+        // Sans effet si le protocole n'a pas été activé.
+        crossterm::event::PopKeyboardEnhancementFlags
     );
 }
 
