@@ -2,6 +2,7 @@
 
 mod explorer;
 pub mod icons;
+mod lsp;
 pub mod theme;
 
 use ide_core::{
@@ -10,7 +11,7 @@ use ide_core::{
 };
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use std::ops::Range;
@@ -40,11 +41,17 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         Constraint::Min(0),
     ])
     .areas(main);
-    // Même hauteur que `editor_size` : barres d'onglets et de recherche prises sur la zone éditeur.
-    let [tabs, editor, bar] = Layout::vertical([
+    // Même hauteur que `editor_size` : barres d'onglets, de recherche et panneau Problèmes pris sur la zone éditeur.
+    let problems_h = if state.problems_open {
+        lsp::PROBLEMS_HEIGHT
+    } else {
+        0
+    };
+    let [tabs, editor, bar, problems] = Layout::vertical([
         Constraint::Length(TAB_BAR_HEIGHT),
         Constraint::Min(0),
         Constraint::Length(search_bar_height(state)),
+        Constraint::Length(problems_h),
     ])
     .areas(editor);
     let [gutter, text] = Layout::horizontal([
@@ -73,6 +80,8 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         ..rope
             .len_lines()
             .min(state.scroll_line + text.height as usize);
+    let diags = lsp::visible_diagnostics(state, &visible);
+    let nerd = state.settings.nerd_icons;
     let mut numbers = Vec::new();
     let mut lines = Vec::new();
     for i in visible {
@@ -81,7 +90,23 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         } else {
             Style::new().fg(theme.gutter)
         };
-        // Gouttière : numéro aligné à droite, espace, colonne de diagnostics (vide avant le LSP).
+        // Diagnostics touchant la ligne, du plus grave au moins grave, en chars de la ligne.
+        let start = rope.line_to_char(i);
+        let line = rope.line(i);
+        let end = start + line.len_chars();
+        let rel = |r: &Range<usize>| r.start.saturating_sub(start)..r.end.saturating_sub(start);
+        let marks: Vec<_> = diags
+            .iter()
+            .filter(|(r, _)| r.start < end && r.end > start)
+            .map(|(r, sev)| (rel(r), *sev))
+            .collect();
+        let marker = marks.first().map_or(Span::raw(" "), |(_, sev)| {
+            Span::styled(
+                lsp::icon(*sev, nerd),
+                Style::new().fg(lsp::color(*sev, theme)),
+            )
+        });
+        // Gouttière : numéro aligné à droite, espace, colonne de diagnostics.
         numbers.push(Line::from(vec![
             Span::styled(
                 format!(
@@ -92,15 +117,11 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
                 style,
             ),
             Span::raw(" "),
-            Span::raw(" "),
+            marker,
         ]));
         // Sélection ramenée en index de char relatifs à la ligne (vide si hors ligne).
-        let start = rope.line_to_char(i);
-        let rel = |r: &Range<usize>| r.start.saturating_sub(start)..r.end.saturating_sub(start);
         let sel = selection.as_ref().map_or(0..0, rel);
         // Occurrences touchant la ligne : triées, la première trouvée par recherche binaire.
-        let line = rope.line(i);
-        let end = start + line.len_chars();
         let first = matches.partition_point(|m| m.end <= start);
         let hits: Vec<_> = matches[first..]
             .iter()
@@ -143,7 +164,13 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
             eol,
             |k| {
                 // Priorité : sélection > occurrence (courante ou non) > coloration seule.
-                let base = find(&colors, k).unwrap_or_default();
+                // Diagnostic : souligné de sa couleur, la couleur du texte reste celle de la coloration.
+                let mut base = find(&colors, k).unwrap_or_default();
+                if let Some((_, sev)) = marks.iter().find(|(r, _)| r.contains(&k)) {
+                    base = base
+                        .add_modifier(Modifier::UNDERLINED)
+                        .underline_color(lsp::color(*sev, theme));
+                }
                 if sel.contains(&k) {
                     base.patch(theme.selection)
                 } else {
@@ -168,6 +195,11 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         );
     }
     frame.render_widget(Paragraph::new(lines), text);
+    if state.problems_open {
+        lsp::problems_panel(state, frame, problems, theme);
+    }
+    lsp::hover(state, frame, text, theme);
+    lsp::completion(state, frame, text, theme);
 
     // Focus explorateur : le curseur est celui de son invite, ou masqué.
     let editor_focus = state.focus == ide_core::Focus::Editor;
@@ -184,13 +216,23 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     }
 
     let dirty = if doc.is_dirty() { " ●" } else { "" };
-    let left = format!(" {}{dirty} | {} ", doc.display_name(), state.status);
+    let counts = match lsp::diagnostic_counts(state) {
+        (0, 0) => String::new(),
+        (e, w) if nerd => format!("✖ {e} ⚠ {w} | "),
+        (e, w) => format!("E {e} W {w} | "),
+    };
+    let left = format!(" {counts}{}{dirty} | {} ", doc.display_name(), state.status);
+    let lsp_status = if state.lsp_status.is_empty() {
+        String::new()
+    } else {
+        format!("{} | ", state.lsp_status)
+    };
     let ending = match doc.line_ending {
         LineEnding::Lf => "LF",
         LineEnding::CrLf => "CRLF",
     };
     let right = format!(
-        "Ln {}, Col {} | {ending} | UTF-8 ",
+        "{lsp_status}Ln {}, Col {} | {ending} | UTF-8 ",
         cur_line + 1,
         cur_col + 1
     );
@@ -336,7 +378,7 @@ fn visible_slice(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ide_core::Document;
+    use ide_core::{CompletionItem, Diagnostic, Document, Severity};
     use ratatui::buffer::Cell;
     use ratatui::style::{Color, Modifier};
     use ratatui::{Terminal, backend::TestBackend};
@@ -793,5 +835,242 @@ mod tests {
         // Nom inconnu : repli sur le sombre.
         let c = draw_settings("solarized").buffer()[(X, Y + 1)].clone();
         assert_eq!((c.fg, c.bg), (d.foreground, d.background));
+    }
+
+    fn diag(l0: usize, c0: usize, l1: usize, c1: usize, severity: Severity) -> Diagnostic {
+        let pos = |line, character| ide_core::Position { line, character };
+        Diagnostic {
+            start: pos(l0, c0),
+            end: pos(l1, c1),
+            severity,
+            message: format!("problème {l0}:{c0}"),
+            source: None,
+        }
+    }
+
+    /// État sur `text` (fichier `/p/src/a.rs`) avec les diagnostics `ds`.
+    fn diagnostique(text: &str, ds: Vec<Diagnostic>) -> State {
+        let mut s = state(Document::from_text(Some("/p/src/a.rs".into()), text));
+        s.diagnostics.insert("/p/src/a.rs".into(), ds);
+        s
+    }
+
+    fn souligne(b: &TestBackend, x: u16, y: u16) -> Option<Color> {
+        let c = &b.buffer()[(X + x, Y + y)];
+        c.modifier
+            .contains(Modifier::UNDERLINED)
+            .then_some(c.underline_color)
+    }
+
+    fn ligne(b: &TestBackend, y: u16) -> String {
+        (0..80).map(|x| b.buffer()[(x, y)].symbol()).collect()
+    }
+
+    #[test]
+    fn diagnostic_souligne_apres_emoji() {
+        // 🦀 = 2 unités UTF-16 et 2 colonnes : `x` (UTF-16 2..3) est en colonne 2.
+        let mut s = diagnostique("🦀x = y", vec![diag(0, 2, 0, 3, Severity::Error)]);
+        s.highlights = vec![(4..5, "variable")];
+        let b = draw(&s);
+        let err = Theme::dark().error;
+        assert_eq!(souligne(&b, 2, 0), Some(err));
+        assert_eq!(souligne(&b, 0, 0), None);
+        assert_eq!(souligne(&b, 3, 0), None);
+        // La couleur du texte reste celle de la coloration.
+        assert_eq!(b.buffer()[(X + 2, Y)].fg, syn("variable"));
+    }
+
+    #[test]
+    fn diagnostic_multi_ligne() {
+        let b = draw(&diagnostique(
+            "abc\ndef\nghi",
+            vec![diag(0, 1, 1, 2, Severity::Warning)],
+        ));
+        let w = Some(Theme::dark().warning);
+        let l = |y| (0..3).map(|x| souligne(&b, x, y)).collect::<Vec<_>>();
+        assert_eq!(l(0), [None, w, w]);
+        assert_eq!(l(1), [w, w, None]);
+        assert_eq!(l(2), [None; 3]);
+        // Marqueur sur les deux lignes touchées.
+        assert_eq!(b.buffer()[(X - 1, Y + 1)].symbol(), "⚠");
+        assert_eq!(b.buffer()[(X - 1, Y + 2)].symbol(), " ");
+    }
+
+    #[test]
+    fn gouttiere_le_plus_grave_gagne() {
+        let ds = vec![
+            diag(0, 0, 0, 1, Severity::Warning),
+            diag(0, 2, 0, 3, Severity::Error),
+            diag(1, 0, 1, 1, Severity::Info),
+        ];
+        let mut s = diagnostique("abcd\nef", ds);
+        let b = draw(&s);
+        let t = Theme::dark();
+        let g = |b: &TestBackend, y| b.buffer()[(X - 1, Y + y)].clone();
+        assert_eq!((g(&b, 0).symbol(), g(&b, 0).fg), ("✖", t.error));
+        assert_eq!((g(&b, 1).symbol(), g(&b, 1).fg), ("●", t.muted));
+        s.settings.nerd_icons = false;
+        let b = draw(&s);
+        assert_eq!(g(&b, 0).symbol(), "E");
+        assert_eq!(g(&b, 1).symbol(), "i");
+    }
+
+    fn item(label: &str, kind: &str, detail: Option<&str>) -> CompletionItem {
+        CompletionItem {
+            label: label.into(),
+            kind: Some(kind.into()),
+            detail: detail.map(Into::into),
+            insert_text: label.into(),
+        }
+    }
+
+    /// 40 lignes « let x = io::st », curseur en fin de ligne `line`, complétion sur « st ».
+    fn complete(line: usize, items: Vec<CompletionItem>, selected: usize) -> State {
+        let mut s = state(Document::from_text(None, &"let x = io::st\n".repeat(40)));
+        s.doc.move_down(line, false);
+        s.doc.move_line_end(false);
+        let anchor = s.doc.cursor() - 2;
+        s.completion = Some(ide_core::Completion {
+            items,
+            selected,
+            anchor,
+        });
+        s
+    }
+
+    /// Symboles des cellules `xs` de la ligne écran `y`.
+    fn cells(b: &TestBackend, y: u16, xs: Range<u16>) -> String {
+        xs.map(|x| b.buffer()[(x, y)].symbol()).collect()
+    }
+
+    #[test]
+    fn popup_sous_le_curseur() {
+        let items = vec![
+            item("stdin", "fn", Some("fn() -> Stdin")),
+            item("stdout_long", "fn", None),
+            item("x", "struct", None),
+        ];
+        let b = draw(&complete(0, items, 1));
+        // Bord gauche une cellule avant `st` (colonne 12) ; largeur 6 + 1 + 11 + 2 = 20.
+        let x = X + 12 - 1;
+        assert_eq!(cells(&b, Y + 1, x..x + 20), format!("┌{}┐", "─".repeat(18)));
+        // Détail tronqué, calé à droite dans la place restante.
+        assert_eq!(cells(&b, Y + 2, x..x + 20), "│fn     stdin fn() │");
+        assert_eq!(cells(&b, Y + 3, x..x + 20), "│fn     stdout_long│");
+        assert_eq!(cells(&b, Y + 4, x..x + 20), "│struct x          │");
+        assert_eq!(cells(&b, Y + 5, x..x + 20), format!("└{}┘", "─".repeat(18)));
+        // Sélection surlignée, kind estompé.
+        let t = Theme::dark();
+        assert!(a_style(&b.buffer()[(x + 8, Y + 3)], t.explorer_selected));
+        assert_eq!(b.buffer()[(x + 1, Y + 2)].fg, t.muted);
+        assert_ne!(
+            b.buffer()[(x + 8, Y + 2)].bg,
+            t.explorer_selected.bg.expect("fond")
+        );
+    }
+
+    #[test]
+    fn popup_au_dessus_en_bas_d_ecran() {
+        // Ligne 20 = ligne écran 21, zone texte jusqu'à 22 : pas la place dessous.
+        let b = draw(&complete(20, vec![item("stdin", "fn", None)], 0));
+        let x = X + 11;
+        assert_eq!(cells(&b, 18, x..x + 3), "┌──");
+        assert_eq!(cells(&b, 19, x..x + 9), "│fn stdin");
+        assert_eq!(cells(&b, 20, x..x + 3), "└──");
+        assert_eq!(cells(&b, 21, x..x + 3), ":st");
+    }
+
+    #[test]
+    fn popup_defile_vers_la_selection() {
+        let items = (0..15)
+            .map(|i| item(&format!("item{i:02}"), "fn", None))
+            .collect();
+        let b = draw(&complete(0, items, 12));
+        let x = X + 11;
+        // 10 lignes visibles : 03..=12, la sélection en dernier.
+        assert_eq!(cells(&b, Y + 2, x..x + 10), "│fn item03");
+        assert_eq!(cells(&b, Y + 11, x..x + 10), "│fn item12");
+        assert_eq!(cells(&b, Y + 12, x..x + 3), "└──");
+        assert!(a_style(
+            &b.buffer()[(x + 4, Y + 11)],
+            Theme::dark().explorer_selected
+        ));
+    }
+
+    #[test]
+    fn infobulle_au_dessus_sans_clotures() {
+        let mut s = state(Document::from_text(None, &"abc\n".repeat(10)));
+        s.doc.move_down(5, false);
+        let at = s.doc.cursor();
+        s.hover = Some(ide_core::Hover {
+            text: "```rust\nfn main()\n```\nDoc".into(),
+            at,
+        });
+        let b = draw(&s);
+        // Deux lignes de texte + bords, juste au-dessus de la ligne 5 (écran 6) ; `Clear` masque le texte.
+        let x = X - 1;
+        assert_eq!(cells(&b, Y + 1, x..x + 11), "┌─────────┐");
+        assert_eq!(cells(&b, Y + 2, x..x + 11), "│fn main()│");
+        assert_eq!(cells(&b, Y + 3, x..x + 11), "│Doc      │");
+        assert_eq!(cells(&b, Y + 4, x..x + 11), "└─────────┘");
+        // En haut d'écran : dessous.
+        s.doc.set_cursor(0, false);
+        s.hover = Some(ide_core::Hover {
+            text: "Doc".into(),
+            at: 0,
+        });
+        let b = draw(&s);
+        assert_eq!(cells(&b, Y + 2, x..x + 5), "│Doc│");
+    }
+
+    #[test]
+    fn panneau_problemes() {
+        let mut s = diagnostique(
+            &"let x = io::st;\n".repeat(30),
+            vec![
+                diag(3, 12, 3, 14, Severity::Error),
+                diag(0, 4, 0, 5, Severity::Warning),
+            ],
+        );
+        s.diagnostics.insert(
+            "/ailleurs/b.rs".into(),
+            vec![diag(9, 0, 9, 1, Severity::Info)],
+        );
+        s.explorer.root = Some("/p".into());
+        s.problems_open = true;
+        s.lsp_status = "rust-analyzer ✓".into();
+        let b = draw(&s);
+        insta::assert_snapshot!(b);
+        // La zone texte perd la hauteur du panneau : 14 lignes, la dernière en écran 14.
+        assert_eq!(b.buffer()[(X - 3, 14)].symbol(), "4");
+        assert!(ligne(&b, 15)[..].contains("│ PROBLÈMES (3) ─"));
+        let vide = draw(&State {
+            problems_open: true,
+            ..state(Document::from_text(None, ""))
+        });
+        assert!(ligne(&vide, 16).contains("Aucun problème"));
+    }
+
+    #[test]
+    fn barre_de_statut_compteurs_et_serveur() {
+        let mut s = diagnostique(
+            "abc",
+            vec![
+                diag(0, 0, 0, 1, Severity::Error),
+                diag(0, 1, 0, 2, Severity::Error),
+                diag(0, 2, 0, 3, Severity::Hint),
+            ],
+        );
+        s.lsp_status = "rust-analyzer ✓".into();
+        let b = draw(&s);
+        let l = ligne(&b, 23);
+        assert!(l.starts_with(" ✖ 2 ⚠ 0 | a.rs | Prêt"), "{l}");
+        assert!(l.contains("rust-analyzer ✓ | Ln 1, Col 1 | LF"), "{l}");
+        s.settings.nerd_icons = false;
+        assert!(ligne(&draw(&s), 23).starts_with(" E 2 W 0 | a.rs"));
+        // Sans diagnostic ni serveur : barre inchangée.
+        let l = ligne(&draw(&state(Document::from_text(None, ""))), 23);
+        assert!(l.starts_with(" [sans nom] | Prêt"), "{l}");
+        assert!(l.contains("Ln 1, Col 1 | LF") && !l.contains("| Ln"), "{l}");
     }
 }
