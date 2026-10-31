@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+mod backup;
 mod document;
 mod editor;
 mod explorer;
@@ -161,6 +162,20 @@ pub enum Event {
         settings: Settings,
         errors: Vec<String>,
     },
+    /// Copie de secours de `path` (NF-07) dont le texte diffère du disque, envoyée après l'ouverture
+    /// de son onglet : proposée par Alt+B (restaurer) / Alt+N (ignorer).
+    BackupFound {
+        path: PathBuf,
+        text: String,
+    },
+    /// Session (F-80) : curseur (ligne, colonne en chars) et première ligne visible de l'onglet de `path`.
+    RestoreView {
+        path: PathBuf,
+        cursor: (usize, usize),
+        scroll_line: usize,
+    },
+    /// Active l'onglet ouvert sur ce chemin, s'il existe.
+    ActivateTab(PathBuf),
 }
 
 /// Effets demandés par `update`, exécutés par l'app.
@@ -213,6 +228,8 @@ pub enum Command {
     },
     /// Relire un fichier ouvert, changé sur le disque → `Event::FileChanged`.
     Reload(PathBuf),
+    /// Supprimer la copie de secours de ce fichier (Alt+N).
+    DiscardBackup(PathBuf),
 }
 
 /// Réglages lus dans `config.toml` (utilisateur puis projet) par l'app ; chaque clé a un défaut.
@@ -306,6 +323,8 @@ pub struct State {
     /// Fichier modifié à la fois dans l'onglet et sur le disque : chemin et texte disque proposé
     /// (Alt+R recharge, Alt+K garde la version de l'éditeur).
     pub disk_conflict: Option<(PathBuf, String)>,
+    /// Copie de secours proposée au démarrage : chemin et texte (Alt+B restaure, Alt+N ignore).
+    pub backup_offer: Option<(PathBuf, String)>,
 }
 
 /// Largeur occupée par l'explorateur (0 s'il est masqué), partagée par l'UI et le calcul du défilement.

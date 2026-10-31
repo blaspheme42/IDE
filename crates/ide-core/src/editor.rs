@@ -1,7 +1,7 @@
 //! Traduction des événements en actions sur l'état (clavier, fichiers, défilement).
 
 use crate::{
-    Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, TAB_BAR_HEIGHT,
+    Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, TAB_BAR_HEIGHT, backup,
     editor_size, explorer, lsp, palette, search, tabs,
 };
 
@@ -124,6 +124,22 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
         Event::Tick => vec![],
+        Event::BackupFound { path, text } => {
+            backup::found(state, path, text);
+            vec![]
+        }
+        Event::RestoreView {
+            path,
+            cursor,
+            scroll_line,
+        } => {
+            backup::restore_view(state, &path, cursor, scroll_line);
+            vec![]
+        }
+        Event::ActivateTab(path) => {
+            backup::activate_tab(state, &path);
+            vec![]
+        }
         Event::FileOpened { path, text } => {
             if tabs::open(state, path, |p| Document::from_text(Some(p), &text)) {
                 state.status = format!("Ouvert : {}", state.doc.display_name());
@@ -272,6 +288,9 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     // Après la recherche : ouverte, elle garde Alt+R (regex).
     if tabs::conflict_key(state, k) {
         return vec![];
+    }
+    if let Some(cmds) = backup::key(state, k) {
+        return cmds;
     }
     let page = usize::from(editor_size(state).1).max(1);
     let doc = &mut state.doc;
