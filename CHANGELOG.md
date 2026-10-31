@@ -2,6 +2,25 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; une version par jalon.
 
+## [1.0.0] — 2026-10-31 · J5 Version 1.0
+
+Les 21 exigences « Must » du cahier des charges sont implémentées, relues et testées.
+
+### Ajouté
+- Ctrl+Début / Ctrl+Fin, Ctrl+← / Ctrl+→ par mot (Shift étend la sélection), Alt+Retour arrière (ou Ctrl+Retour arrière si le terminal le distingue) efface le mot précédent.
+- F1 ouvre la palette de commandes ; protocole clavier étendu activé sur kitty, WezTerm, foot, Ghostty, Alacritty.
+- Bandeau permanent tant qu'une copie de secours attend une réponse (Alt+B / Alt+N).
+
+### Corrigé
+- Copies de secours : une par instance (une autre instance ne peut plus proposer ni supprimer les vôtres), dernière copie écrite sur SIGHUP / SIGTERM (fermeture du terminal), copie immédiate après un renommage, écriture en échec retentée, copies gardées si une sauvegarde échoue à la sortie, modifications faites pendant une proposition toujours copiées, texte produit hors de la boucle, scan au démarrage en tâche de fond.
+- Complétion : listes incomplètes redemandées à la frappe ; une réponse périmée ne fait plus ignorer la suivante.
+- didSave envoyé même si l'on tape pendant l'écriture ; `[keys]` ne détourne plus une commande lancée depuis la palette.
+- Fichiers de plus de 5 Mo non synchronisés avec le serveur de langage : frappe en ~20 ms sur 62 Mo au lieu de ~200 ms (NF-03).
+
+### Vérifié
+- Essais en terminal réel (tmux) : explorateur, palettes, sauvegarde, complétion rust-analyzer, F12 ; plantage `kill -9` puis restauration.
+- NF-01 premier rendu 6–35 ms ; NF-02 frappe ~2 ms de traitement ; NF-03 fichier de 62 Mo ouvert et éditable ; NF-04 ~20 Mo au repos ; compilation avec Rust 1.88 (vérifiée en CI).
+
 ## [0.4.0] — 2026-10-31 · J4 LSP, début de J5
 
 ### Ajouté
