@@ -34,6 +34,7 @@ regex = "1"
 proptest = "1"
 arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
 ignore = "0.4"
+notify-debouncer-mini = "0.7"
 trash = { version = "5.2", default-features = false, features = ["chrono"] }
 tree-sitter = "0.26"
 tree-sitter-rust = "0.24"

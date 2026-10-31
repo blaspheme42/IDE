@@ -88,6 +88,17 @@ async fn run(
     // Appliquée tout de suite : le premier rendu a déjà le bon thème (pas de flash sombre).
     let config = Event::ConfigLoaded { settings, errors };
     ide_core::update(&mut state, config.clone());
+    // Surveillance du disque (F-05, NF-09), active tant que `_watcher` vit ; depuis le thread du watcher,
+    // `blocking_send` n'attend que lui, jamais la boucle.
+    let watch_tx = tx.clone();
+    let _watcher = ide_workspace::watch(&root, move |paths| {
+        let _ = watch_tx.blocking_send(Event::DiskChanged(paths));
+    })
+    .inspect_err(|e| {
+        tracing::warn!("{e}");
+        state.status = format!("Rafraîchissement automatique désactivé : {e}");
+    })
+    .ok();
     tx.send(Event::OpenRoot(root)).await?;
     // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
     if let Some(path) = file {
@@ -142,7 +153,8 @@ async fn run(
                     | Command::CreateFile(_)
                     | Command::CreateDir(_)
                     | Command::Rename { .. }
-                    | Command::Trash(_)) => workspace::spawn(cmd, tx.clone()),
+                    | Command::Trash(_)
+                    | Command::Reload(_)) => workspace::spawn(cmd, tx.clone()),
                 }
             }
             if quit {

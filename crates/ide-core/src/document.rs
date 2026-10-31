@@ -83,6 +83,9 @@ pub struct Document {
     edits: Vec<TextEdit>,
     /// Identifiant attribué par l'app pour retrouver l'arbre syntaxique de ce document.
     pub syntax_id: Option<u64>,
+    /// Empreintes des derniers contenus disque connus (lu, sauvegardé, refusé) : les retrouver sur le
+    /// disque n'est pas un changement venu d'ailleurs (notre propre sauvegarde, même si l'on a retapé depuis).
+    pub disk_hashes: Vec<u64>,
 }
 
 /// Une édition en octets et en (ligne, colonne-octet), avant/après, au format de `tree_sitter::InputEdit`.
@@ -94,6 +97,13 @@ pub struct TextEdit {
     pub start: (usize, usize),
     pub old_end: (usize, usize),
     pub new_end: (usize, usize),
+}
+
+fn text_hash(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    text.hash(&mut h);
+    h.finish()
 }
 
 /// Bornes de graphèmes de `s`, en index de `char`, de 0 à `s.chars().count()` inclus.
@@ -135,8 +145,22 @@ impl Document {
             rope,
             path,
             line_ending,
+            disk_hashes: vec![text_hash(text)],
             ..Self::default()
         }
+    }
+
+    /// Retient `text` comme contenu disque connu (les 8 derniers : des sauvegardes en file d'attente).
+    pub fn remember_disk(&mut self, text: &str) {
+        let h = text_hash(text);
+        self.disk_hashes.retain(|&x| x != h);
+        self.disk_hashes.push(h);
+        let extra = self.disk_hashes.len().saturating_sub(8);
+        self.disk_hashes.drain(..extra);
+    }
+
+    pub fn knows_disk(&self, text: &str) -> bool {
+        self.disk_hashes.contains(&text_hash(text))
     }
 
     pub fn rope(&self) -> &Rope {
