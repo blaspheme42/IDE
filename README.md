@@ -2,7 +2,7 @@
 
 IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration tree-sitter, LSP et terminal intégré, le tout dans votre terminal.
 
-**État :** J3 terminé (coloration tree-sitter, thèmes, configuration) · prochain jalon : J4 LSP
+**État :** J4 terminé (serveur de langage) · J5 en cours (palettes, raccourcis personnalisés, copie de secours, session)
 
 ## Prérequis
 
@@ -14,6 +14,30 @@ IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration 
 ```sh
 cargo run -p ide-app      # lance l'IDE (binaire `ide`)
 cargo test --workspace    # lance tous les tests
+```
+
+## Configuration
+
+`~/.config/ide/config.toml` (ou `$XDG_CONFIG_HOME/ide/config.toml`), surchargé par `<projet>/.ide/config.toml`. Toutes les clés sont facultatives ; une erreur s'affiche sans empêcher le démarrage.
+
+```toml
+[editor]
+theme = "dark"          # dark | light
+tab_size = 4            # quand aucun .editorconfig ne s'applique
+insert_spaces = true
+icons = "nerd"          # nerd | ascii
+
+[explorer]
+width = 30
+show_hidden = false
+
+[keys]                  # touche = nom de commande (voir la palette Ctrl+Shift+P)
+"f5" = "save"
+"ctrl+shift+k" = "close_tab"
+
+[lsp.python]            # remplace le serveur par défaut d'un langage
+command = "pylsp"
+args = []
 ```
 
 ## Architecture
@@ -39,6 +63,11 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` : copier / couper / coller (sans sélection : la ligne entière). Presse-papiers système, ou interne si aucun n'est disponible (SSH).
 - `Tab` / `Shift+Tab` : indenter / désindenter (la sélection entière si elle couvre plusieurs lignes) ; `Entrée` garde l'indentation. Tabulations ou espaces et largeur selon `.editorconfig` (4 espaces par défaut).
 - `Ctrl+F` / `Ctrl+H` : rechercher / remplacer. Dans la barre : `Entrée` ou `F3` suivant, `Shift+F3` précédent, `Tab` change de champ, `Entrée` dans « Remplacer » remplace l'occurrence courante, `Alt+Entrée` remplace tout, `Alt+R` regex (`$1`, `${nom}` dans le remplacement), `Alt+C` casse, `Échap` ferme.
+- Explorateur : `Ctrl+B` l'affiche ou le masque, `Ctrl+E` y place le focus ; flèches pour naviguer, `Entrée` ouvre, `n` / `Shift+N` nouveau fichier / dossier, `F2` ou `r` renommer, `m` déplacer, `Suppr` corbeille (confirmation), `.` fichiers cachés, `<` / `>` largeur.
+- Onglets : `Ctrl+W` fermer (deux fois si modifié), `Ctrl+PageSuiv` / `Ctrl+PagePréc` suivant / précédent, `Alt+1`…`Alt+9`.
+- Palettes : `Ctrl+P` ouvrir un fichier du projet (recherche floue), `Ctrl+Shift+P` toutes les commandes.
+- Code (serveur de langage, démarré automatiquement : rust-analyzer, pyright, clangd) : complétion à la frappe ou `Ctrl+Espace` (`Entrée`/`Tab` accepte), `Ctrl+K` infobulle, `F12` aller à la définition, `F8` / `Shift+F8` problème suivant / précédent, `Ctrl+Shift+M` panneau Problèmes. Un serveur absent ou planté n'empêche jamais d'éditer.
+- Fichier modifié par un autre programme : rechargé automatiquement s'il n'a pas de modifications, sinon `Alt+R` recharge, `Alt+K` garde votre version.
 - `Ctrl+Q` : quitter ; s'il y a des modifications non sauvegardées, `Ctrl+Q` deux fois pour quitter sans sauvegarder.
 - Logs : `$XDG_STATE_HOME/ide/ide.log` (par défaut `~/.local/state/ide/ide.log`).
 - `ide --panic-test` : panique volontairement après le premier rendu, pour vérifier que le terminal est bien restauré.
