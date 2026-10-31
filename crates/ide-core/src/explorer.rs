@@ -470,6 +470,12 @@ pub(crate) fn mouse(state: &mut State, m: MouseInput) -> Option<Vec<Command>> {
         MouseKind::ScrollDown => {
             ex.scroll = (ex.scroll + WHEEL_LINES).min(ex.nodes.len().saturating_sub(h))
         }
+        // Invite ouverte : un clic dans l'arbre l'annule, sinon la cible affichée et la ligne sélectionnée divergent.
+        MouseKind::Down if ex.prompt.is_some() => {
+            ex.prompt = None;
+            state.focus = Focus::Explorer;
+            ensure_visible(state);
+        }
         MouseKind::Down => {
             state.focus = Focus::Explorer;
             state.dragging = false;
@@ -1369,6 +1375,17 @@ mod tests {
         s.width = 10;
         press(&mut s, Key::Char('>'));
         assert_eq!(s.explorer.width, 12);
+    }
+
+    #[test]
+    fn clic_pendant_une_invite_l_annule() {
+        let mut s = setup();
+        press(&mut s, Key::Delete);
+        assert!(s.explorer.prompt.is_some());
+        // Clic sur une autre ligne : l'invite se ferme au lieu de changer de cible en silence.
+        click(&mut s, MouseKind::Down, 5, 3);
+        assert!(s.explorer.prompt.is_none());
+        assert!(press(&mut s, Key::Char('o')).is_empty());
     }
 
     #[test]

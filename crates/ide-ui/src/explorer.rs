@@ -106,7 +106,12 @@ pub(crate) fn render(state: &State, frame: &mut Frame, area: Rect, theme: &Theme
             PromptKind::Rename => "Renommer : ".into(),
             PromptKind::Move => "Déplacer vers : ".into(),
             PromptKind::ConfirmTrash => {
-                let name = ex.nodes.get(ex.selected).map_or("", |n| &n.entry.name);
+                // La cible de la commande, pas la ligne sélectionnée (qui a pu bouger depuis).
+                let name = ex
+                    .prompt_target
+                    .file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default();
                 format!("Mettre « {name} » à la corbeille ? (o/n)").into()
             }
         };
@@ -236,13 +241,14 @@ mod tests {
     }
 
     #[test]
-    fn invite_corbeille_nomme_la_selection() {
+    fn invite_corbeille_nomme_la_cible() {
         let mut s = state();
         s.explorer.prompt = Some(Prompt {
             kind: PromptKind::ConfirmTrash,
             input: String::new(),
         });
-        s.explorer.selected = 6;
+        s.explorer.prompt_target = "/p/Cargo.toml".into();
+        s.explorer.selected = 0;
         let b = draw(&s);
         let line: String = (1..29).map(|x| b.buffer()[(x, 8)].symbol()).collect();
         assert!(line.starts_with("Mettre « Cargo.toml » à la"), "{line}");
