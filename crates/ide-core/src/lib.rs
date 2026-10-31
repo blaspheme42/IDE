@@ -14,8 +14,9 @@ pub use document::{Document, Indent, LineEnding, TextEdit};
 pub use editor::gutter_width;
 pub use explorer::{Explorer, FsChange, FsEntry, Node, Prompt, PromptKind};
 pub use lsp::{
-    Completion, CompletionItem, Diagnostic, Hover, Location, LspServer, Position, Severity,
-    default_servers,
+    Completion, CompletionItem, Diagnostic, Hover, Location, LspPending, LspServer,
+    PROBLEMS_HEIGHT, Position, Severity, default_servers, diagnostic_counts, problems,
+    visible_completions,
 };
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
@@ -272,6 +273,10 @@ pub struct State {
     pub problems_open: bool,
     /// État du serveur de langage, pour la barre de statut.
     pub lsp_status: String,
+    /// Aller à la définition dans un autre fichier : cible appliquée à l'arrivée de son `FileOpened`.
+    pub pending_jump: Option<Location>,
+    /// Requêtes LSP en vol (interne au cœur).
+    pub lsp_pending: LspPending,
     /// Coloration des lignes visibles du document actif, calculée par l'app avant chaque rendu :
     /// plages en OCTETS de la rope, triées, sans chevauchement, et catégorie (`"keyword"`, `"string"`…).
     pub highlights: Vec<(std::ops::Range<usize>, &'static str)>,
@@ -298,13 +303,19 @@ pub fn search_bar_height(state: &State) -> u16 {
         .map_or(0, |s| if s.replace.is_some() { 2 } else { 1 })
 }
 
-/// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, les barres d'onglets, de recherche et de statut.
+/// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, les barres d'onglets,
+/// de recherche et de statut, et le panneau « Problèmes » s'il est ouvert.
 pub fn editor_size(state: &State) -> (u16, u16) {
+    let problems = if state.problems_open {
+        PROBLEMS_HEIGHT
+    } else {
+        0
+    };
     (
         state.width.saturating_sub(explorer_width(state)),
         state
             .height
-            .saturating_sub(TAB_BAR_HEIGHT + 1 + search_bar_height(state)),
+            .saturating_sub(TAB_BAR_HEIGHT + 1 + search_bar_height(state) + problems),
     )
 }
 
