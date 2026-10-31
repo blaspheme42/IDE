@@ -175,6 +175,17 @@ impl LspManager {
 
     /// Avant chaque rendu : démarre les serveurs utiles, envoie didOpen / didChange / didClose
     /// pour les documents ouverts, modifiés ou fermés depuis le dernier appel. Ne bloque jamais.
+    /// Sauvegarde confirmée alors que le document a déjà été retouché (frappe pendant l'écriture) :
+    /// pas de passage modifié → propre, donc `sync` n'enverrait pas de didSave ; on l'envoie ici.
+    pub fn saved_while_dirty(&mut self, path: &Path) {
+        let lang = self.tracked.get(path).map(|t| t.lang.clone());
+        if let Some(Server::Ready(c)) = lang.and_then(|l| self.clients.get(&l))
+            && c.is_alive()
+        {
+            c.did_save(path);
+        }
+    }
+
     pub fn sync(&mut self, state: &State) {
         while let Ok((lang, client)) = self.started_rx.try_recv() {
             let s = client.map_or(Server::Failed, Server::Ready);

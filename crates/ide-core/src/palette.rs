@@ -296,7 +296,10 @@ fn accept(state: &mut State) -> Vec<Command> {
     match p.kind {
         PaletteKind::Files => vec![Command::OpenFile(state.project_files[i].clone())],
         // Palette déjà fermée : la touche rejouée ne revient pas ici.
-        PaletteKind::Commands => crate::update(state, Event::Key(COMMANDS[i].key)),
+        PaletteKind::Commands => {
+            state.replaying = true;
+            crate::update(state, Event::Key(COMMANDS[i].key))
+        }
     }
 }
 
@@ -428,6 +431,30 @@ mod tests {
                 root: "/q".into(),
                 show_hidden: false,
             }]
+        );
+    }
+
+    #[test]
+    fn commande_rejouee_sans_detour_par_keys() {
+        // `"ctrl+s" = "quit"` : la commande « sauvegarder » de la palette sauvegarde quand même.
+        let mut s = State::default();
+        s.doc.path = Some("/p/a.rs".into());
+        s.settings
+            .keys
+            .push((KeyInput::parse("ctrl+s").expect("ctrl+s"), "quit".into()));
+        update(&mut s, touche(Key::F(1), false, false));
+        for c in "sauvegarder".chars() {
+            update(&mut s, touche(Key::Char(c), false, false));
+        }
+        let cmds = update(&mut s, touche(Key::Enter, false, false));
+        assert!(
+            matches!(cmds.as_slice(), [Command::Save { .. }]),
+            "{cmds:?}"
+        );
+        // La touche tapée, elle, reste détournée.
+        assert_eq!(
+            update(&mut s, touche(Key::Char('s'), true, false)),
+            vec![Command::Quit]
         );
     }
 

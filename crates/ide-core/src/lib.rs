@@ -296,6 +296,9 @@ pub struct State {
     pub search: Option<Search>,
     pub explorer: Explorer,
     pub settings: Settings,
+    /// Touche rejouée par la palette de commandes : `[keys]` ne doit pas la détourner.
+    #[doc(hidden)]
+    pub replaying: bool,
     /// Palette ouverte (Ctrl+P, Ctrl+Shift+P).
     pub palette: Option<Palette>,
     /// Fichiers du projet pour Ctrl+P (vide tant que la liste n'est pas arrivée).

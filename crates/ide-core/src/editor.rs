@@ -256,7 +256,10 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         k.mods = crate::Modifiers::default();
     }
     // `[keys]` : la touche personnalisée rejoue le raccourci d'origine de sa commande.
-    let custom = state.settings.keys.iter().find(|(key, _)| *key == k);
+    let replaying = std::mem::take(&mut state.replaying);
+    let custom = (!replaying)
+        .then(|| state.settings.keys.iter().find(|(key, _)| *key == k))
+        .flatten();
     if let Some(info) = custom.and_then(|(_, name)| crate::command_by_name(name)) {
         k = info.key;
     }

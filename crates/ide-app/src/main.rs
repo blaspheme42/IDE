@@ -236,9 +236,22 @@ async fn run(
                 },
             };
             let mut quit = false;
+            let saved = match &ev {
+                Event::Saved { path, .. } => Some(path.clone()),
+                _ => None,
+            };
             let cmds = ide_core::update(&mut state, ev);
             // didChange de la version éditée avant toute requête LSP qui la vise.
             lsp.sync(&state);
+            if let Some(path) = saved {
+                let docs = std::iter::once(&state.doc).chain(state.tabs.iter().map(|t| &t.doc));
+                if docs
+                    .filter(|d| d.path.as_ref() == Some(&path))
+                    .any(|d| d.is_dirty())
+                {
+                    lsp.saved_while_dirty(&path);
+                }
+            }
             for cmd in cmds {
                 match cmd {
                     Command::Quit => quit = true,
