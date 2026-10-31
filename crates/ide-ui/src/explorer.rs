@@ -10,34 +10,32 @@ use std::borrow::Cow;
 use ide_core::{Focus, PromptKind, State};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::icons::{IconSet, icon};
+use crate::theme::Theme;
 
 /// Jeu d'icônes ; deviendra un réglage avec la configuration.
 const ICONS: IconSet = IconSet::Nerd;
-const BORDER_FOCUS: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
-/// Ligne sélectionnée : marquée si l'explorateur a le focus, discrète sinon.
-const SELECTED_FOCUS: Style = Style::new().bg(Color::Blue);
-const SELECTED: Style = Style::new().bg(Color::DarkGray);
-const DIM: Style = Style::new().fg(Color::DarkGray);
 const LOADING: &str = " …";
 
 /// Dessine l'explorateur dans `area` (bordures comprises).
-pub(crate) fn render(state: &State, frame: &mut Frame, area: Rect) {
+pub(crate) fn render(state: &State, frame: &mut Frame, area: Rect, theme: &Theme) {
     let ex = &state.explorer;
     let focus = state.focus == Focus::Explorer;
+    let dim = Style::new().fg(theme.muted);
     let title = ex.root.as_ref().map_or(" EXPLORATEUR ".into(), |r| {
         let name = r.file_name().unwrap_or(r.as_os_str()).to_string_lossy();
         format!(" {} ", name.to_uppercase())
     });
-    let mut block = Block::bordered().title(title);
-    if focus {
-        block = block.border_style(BORDER_FOCUS);
-    }
+    let block = Block::bordered().title(title).border_style(if focus {
+        theme.border_focus
+    } else {
+        Style::new().fg(theme.border)
+    });
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.is_empty() {
@@ -48,8 +46,8 @@ pub(crate) fn render(state: &State, frame: &mut Frame, area: Rect) {
     let width = inner.width as usize;
     if ex.nodes.is_empty() {
         let msg = match (&ex.error, &ex.root) {
-            (Some(e), _) => Span::styled(e.as_str(), Style::new().fg(Color::Red)),
-            (None, Some(_)) => Span::styled("(dossier vide)", DIM),
+            (Some(e), _) => Span::styled(e.as_str(), Style::new().fg(theme.error)),
+            (None, Some(_)) => Span::styled("(dossier vide)", dim),
             (None, None) => Span::raw(""),
         };
         frame.render_widget(
@@ -87,13 +85,18 @@ pub(crate) fn render(state: &State, frame: &mut Frame, area: Rect) {
             Span::styled(glyph, Style::new().fg(color)),
             Span::raw(" "),
             Span::styled(fit(&e.name, avail), name_style),
-            Span::styled(marker, DIM),
+            Span::styled(marker, dim),
         ]);
-        frame.render_widget(Paragraph::new(line), row);
+        // Sélection posée avant la ligne : l'icône garde sa couleur, le nom prend celle du thème.
         if i == ex.selected {
-            let style = if focus { SELECTED_FOCUS } else { SELECTED };
+            let style = if focus {
+                theme.explorer_selected
+            } else {
+                theme.explorer_selected_unfocused
+            };
             frame.buffer_mut().set_style(row, style);
         }
+        frame.render_widget(Paragraph::new(line), row);
     }
 
     if let Some(p) = &ex.prompt {
@@ -152,6 +155,7 @@ fn fit(s: &str, max: usize) -> Cow<'_, str> {
 mod tests {
     use super::*;
     use ide_core::{Document, Explorer, FsEntry, Node, Prompt};
+    use ratatui::style::{Color, Modifier};
     use ratatui::{Terminal, backend::TestBackend};
     use std::path::PathBuf;
 
@@ -203,7 +207,7 @@ mod tests {
     fn draw(state: &State) -> TestBackend {
         let mut terminal = Terminal::new(TestBackend::new(30, 10)).unwrap();
         terminal
-            .draw(|f| render(state, f, Rect::new(0, 0, 30, 10)))
+            .draw(|f| render(state, f, Rect::new(0, 0, 30, 10), &Theme::dark()))
             .unwrap();
         terminal.backend().clone()
     }
@@ -275,12 +279,12 @@ mod tests {
         let mut s = state();
         let bg = |b: &TestBackend, x| b.buffer()[(x, 4)].bg;
         let b = draw(&s);
-        assert!((1..29).all(|x| bg(&b, x) == Color::DarkGray));
+        assert!((1..29).all(|x| Some(bg(&b, x)) == Theme::dark().explorer_selected_unfocused.bg));
         assert_eq!(bg(&b, 0), Color::Reset, "bordure non surlignée");
         assert_eq!(b.buffer()[(1, 3)].bg, Color::Reset);
         s.focus = Focus::Explorer;
         let b = draw(&s);
-        assert!((1..29).all(|x| bg(&b, x) == Color::Blue));
+        assert!((1..29).all(|x| Some(bg(&b, x)) == Theme::dark().explorer_selected.bg));
         assert!(b.buffer()[(0, 0)].modifier.contains(Modifier::BOLD));
     }
 
@@ -305,7 +309,10 @@ mod tests {
         assert!(line(5).contains("README.md"));
         assert!(line(6).trim().is_empty());
         // La sélection (nœud 3) suit le défilement : première ligne intérieure.
-        assert_eq!(b.buffer()[(1, 1)].bg, Color::DarkGray);
+        assert_eq!(
+            Some(b.buffer()[(1, 1)].bg),
+            Theme::dark().explorer_selected_unfocused.bg
+        );
     }
 
     #[test]
@@ -318,7 +325,7 @@ mod tests {
         s.explorer.error = Some("Permission refusée".into());
         let b = draw(&s);
         assert!(line(&b).starts_with("Permission refusée"));
-        assert_eq!(b.buffer()[(1, 1)].fg, Color::Red);
+        assert_eq!(b.buffer()[(1, 1)].fg, Theme::dark().error);
         s.explorer = Explorer::default();
         assert!(line(&draw(&s)).trim().is_empty());
     }
