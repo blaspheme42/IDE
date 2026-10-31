@@ -448,6 +448,7 @@ pub(crate) fn mouse(state: &mut State, m: MouseInput) -> Option<Vec<Command>> {
                     cmds.extend(toggle(state, i));
                 } else {
                     cmds.push(Command::OpenFile(ex.nodes[i].entry.path.clone()));
+                    state.focus = Focus::Editor;
                 }
             }
         }
@@ -568,28 +569,12 @@ pub(crate) fn fs_done(state: &mut State, result: Result<FsChange, String>) -> Ve
         FsChange::Renamed { from, to } => {
             state.status = format!("Renommé : {} → {}", rel(&root, from), rel(&root, to));
             state.explorer.reveal = Some(to.clone());
-            // Onglets ouverts sur le chemin renommé ou dessous.
-            let docs = state.tabs.iter_mut().map(|t| &mut t.doc);
-            for doc in docs.chain([&mut state.doc]) {
-                if let Some(rest) = doc.path.as_ref().and_then(|d| d.strip_prefix(from).ok()) {
-                    // `join("")` ajouterait un `/` final.
-                    let moved = if rest.as_os_str().is_empty() {
-                        to.clone()
-                    } else {
-                        to.join(rest)
-                    };
-                    doc.path = Some(moved);
-                }
-            }
+            // Les chemins des onglets sont suivis par `tabs::on_fs_change`, appelée avant.
             let (a, b) = (from.parent(), to.parent());
             a.into_iter().chain(b.filter(|b| Some(*b) != a)).collect()
         }
         FsChange::Trashed(p) => {
             state.status = format!("Mis à la corbeille : {}", rel(&root, p));
-            let open = |d: &crate::Document| d.path.as_ref().is_some_and(|d| d.starts_with(p));
-            if open(&state.doc) || state.tabs.iter().any(|t| open(&t.doc)) {
-                state.status.push_str(" (encore ouvert dans l'éditeur)");
-            }
             p.parent().into_iter().collect()
         }
     };
@@ -609,6 +594,14 @@ pub(crate) fn fs_done(state: &mut State, result: Result<FsChange, String>) -> Ve
                 show_hidden: ex.show_hidden,
             });
         }
+    }
+    // Rien ne re-listera le dossier du chemin à révéler : l'oublier, sinon un dépliage futur y sauterait.
+    let relisted = |r: &PathBuf| {
+        cmds.iter()
+            .any(|c| matches!(c, Command::ListDir { dir, .. } if Some(dir.as_path()) == r.parent()))
+    };
+    if !ex.reveal.as_ref().is_some_and(relisted) {
+        ex.reveal = None;
     }
     cmds.extend(open);
     cmds
@@ -1145,7 +1138,7 @@ mod tests {
         s.doc.path = Some(p("a/y.rs"));
         let done = update(&mut s, Event::FsDone(Ok(FsChange::Trashed(p("a")))));
         assert_eq!(done, vec![ls(ROOT.into())]);
-        assert!(s.status.contains("encore ouvert"));
+        assert!(s.status.contains("Ctrl+S le recréera"), "{}", s.status);
         // Erreur : statut, pas d'ouverture différée.
         press(&mut s, Key::Char('n'));
         typ(&mut s, "z");

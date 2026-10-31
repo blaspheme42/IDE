@@ -108,6 +108,8 @@ fn put_active(state: &mut State, t: Tab, i: usize) {
     state.scroll_col = t.scroll_col;
     state.active = i;
     state.dragging = false;
+    // Le Ctrl+W armé visait l'onglet qu'on quitte.
+    state.close_armed = false;
     search::refresh(state, false);
 }
 
