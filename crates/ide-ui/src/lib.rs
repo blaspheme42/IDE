@@ -7,8 +7,8 @@ mod palette;
 pub mod theme;
 
 use ide_core::{
-    LineEnding, Search, State, TAB_BAR_HEIGHT, explorer_width, gutter_width, search_bar_height,
-    tab_label, tab_list, tab_scroll,
+    LineEnding, Search, State, TAB_BAR_HEIGHT, banner_height, explorer_width, gutter_width,
+    search_bar_height, tab_label, tab_list, tab_scroll,
 };
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
@@ -42,14 +42,15 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         Constraint::Min(0),
     ])
     .areas(main);
-    // Même hauteur que `editor_size` : barres d'onglets, de recherche et panneau Problèmes pris sur la zone éditeur.
+    // Même hauteur que `editor_size` : barres d'onglets, bandeau, recherche et panneau Problèmes pris sur la zone éditeur.
     let problems_h = if state.problems_open {
         lsp::PROBLEMS_HEIGHT
     } else {
         0
     };
-    let [tabs, editor, bar, problems] = Layout::vertical([
+    let [tabs, banner, editor, bar, problems] = Layout::vertical([
         Constraint::Length(TAB_BAR_HEIGHT),
+        Constraint::Length(banner_height(state)),
         Constraint::Min(0),
         Constraint::Length(search_bar_height(state)),
         Constraint::Length(problems_h),
@@ -65,6 +66,18 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         explorer::render(state, frame, explorer, theme);
     }
     tab_bar(state, tabs, frame, theme);
+    // Tant que l'offre attend : le statut, lui, est écrasé par le message suivant.
+    if let Some((path, _)) = &state.backup_offer {
+        let name = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |n| n.to_string_lossy().into(),
+        );
+        let text = format!(
+            " Copie de secours de {name} plus récente que le disque : Alt+B restaurer · Alt+N ignorer"
+        );
+        let style = Style::new().fg(theme.warning).add_modifier(Modifier::BOLD);
+        frame.render_widget(Paragraph::new(text).style(style), banner);
+    }
 
     let doc = &state.doc;
     let rope = doc.rope();
@@ -426,6 +439,29 @@ mod tests {
             doc,
             ..State::default()
         }
+    }
+
+    #[test]
+    fn bandeau_de_copie_de_secours_tant_que_l_offre_attend() {
+        let mut s = state(Document::from_text(Some("/x/a.txt".into()), "un\ndeux"));
+        s.backup_offer = Some(("/x/a.txt".into(), "copie".into()));
+        s.status = "Ouvert : b.txt".into();
+        let b = draw(&s);
+        let row = |b: &TestBackend, y: u16| -> String {
+            (30..80).map(|x| b.buffer()[(x, y)].symbol()).collect()
+        };
+        assert!(
+            row(&b, 1).starts_with(" Copie de secours de a.txt plus récente que le"),
+            "{}",
+            row(&b, 1)
+        );
+        assert_eq!(b.buffer()[(31, 1)].fg, Theme::dark().warning);
+        // Le texte commence une ligne plus bas, le curseur aussi.
+        assert!(row(&b, 2).contains("1  un"), "{}", row(&b, 2));
+        assert_eq!(b.cursor_position(), Position::new(36, 2));
+        s.backup_offer = None;
+        let b = draw(&s);
+        assert!(row(&b, 1).contains("1  un"), "{}", row(&b, 1));
     }
 
     #[test]

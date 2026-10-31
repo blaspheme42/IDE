@@ -349,19 +349,23 @@ pub fn search_bar_height(state: &State) -> u16 {
         .map_or(0, |s| if s.replace.is_some() { 2 } else { 1 })
 }
 
+/// Bandeau sous la barre d'onglets, tant qu'une copie de secours attend Alt+B / Alt+N : 0 ou 1 ligne.
+pub fn banner_height(state: &State) -> u16 {
+    u16::from(state.backup_offer.is_some())
+}
+
 /// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, les barres d'onglets,
-/// de recherche et de statut, et le panneau « Problèmes » s'il est ouvert.
+/// de recherche et de statut, le bandeau et le panneau « Problèmes » s'il est ouvert.
 pub fn editor_size(state: &State) -> (u16, u16) {
     let problems = if state.problems_open {
         PROBLEMS_HEIGHT
     } else {
         0
     };
+    let bars = TAB_BAR_HEIGHT + banner_height(state) + 1 + search_bar_height(state);
     (
         state.width.saturating_sub(explorer_width(state)),
-        state
-            .height
-            .saturating_sub(TAB_BAR_HEIGHT + 1 + search_bar_height(state) + problems),
+        state.height.saturating_sub(bars + problems),
     )
 }
 

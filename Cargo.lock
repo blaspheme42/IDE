@@ -843,6 +843,7 @@ dependencies = [
  "ide-ui",
  "ide-workspace",
  "ratatui",
+ "ropey",
  "serde_json",
  "tempfile",
  "tokio",

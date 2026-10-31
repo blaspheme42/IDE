@@ -152,24 +152,16 @@ async fn run(
     });
     tx.send(Event::OpenRoot(root.clone())).await?;
     // Fichiers lus avant de lancer le lecteur : FileOpened passe avant toute touche.
-    // Sans fichier en argument, la session (F-80) ; puis les fichiers qui ont une copie de secours
-    // (NF-07) ; le fichier en argument en dernier, actif.
-    let backup_dir = state_dir.join("backup");
+    // Sans fichier en argument, la session (F-80) ; le fichier en argument en dernier, actif.
     let session_file = session::file(&state_dir.join("session"), &root);
-    let (b, sf) = (backup_dir.clone(), session_file.clone());
-    let (opened, offers) =
+    let sf = session_file.clone();
+    let opened =
         tokio::task::spawn_blocking(move || {
-            let offers = backup::scan(&b);
             let (views, active) = match file {
                 None => session::load(&sf),
                 Some(_) => (vec![], None),
             };
             let mut paths: Vec<PathBuf> = views.iter().map(|v| v.0.clone()).collect();
-            for (p, _) in &offers {
-                if !paths.contains(p) && file.as_ref() != Some(p) {
-                    paths.push(p.clone());
-                }
-            }
             paths.extend(file);
             let mut events: Vec<Event> = paths.into_iter().flat_map(workspace::open_file).collect();
             events.extend(views.into_iter().map(|(path, cursor, scroll_line)| {
@@ -180,9 +172,16 @@ async fn run(
                 }
             }));
             events.extend(active.map(Event::ActivateTab));
-            (events, offers)
+            events
         })
         .await?;
+    // Copies de secours (NF-07) : notre dossier tout de suite, la lecture des copies des instances
+    // mortes en fond (elle lit tous les .bak, NF-01) ; offres et fichiers arrivent après le premier rendu.
+    let backup_root = state_dir.join("backup");
+    let backup_dir = backup::claim(&backup_root);
+    let own = backup_dir.clone();
+    let mut scan = tokio::task::spawn_blocking(move || backup::scan(&backup_root, &own));
+    let mut scanning = true;
     for ev in opened {
         tx.send(ev).await?;
     }
@@ -208,30 +207,57 @@ async fn run(
     // Une seule tâche écrit, dans l'ordre des Ctrl+S : une vieille version ne peut pas écraser une récente.
     let (save_tx, save_rx) = mpsc::unbounded_channel();
     let saver = tokio::spawn(save_worker(save_rx, tx.clone()));
+    // Fenêtre du terminal fermée (SIGHUP), arrêt de session (SIGTERM) : dernière copie avant de sortir.
+    let mut terminated = terminate_signal()?;
     let clip = clipboard::spawn(tx.clone());
     let (backup_tx, backup_rx) = mpsc::unbounded_channel();
-    let backup_worker = tokio::spawn(backup::worker(backup_rx));
+    let (failures_tx, mut failures) = mpsc::unbounded_channel();
+    let backup_worker = tokio::spawn(backup::worker(backup_rx, failures_tx));
     let send_backup = |jobs: Vec<backup::Job>| {
         for job in jobs {
             let _ = backup_tx.send(job);
         }
     };
-    let mut backups = backup::Backups::new(backup_dir, offers);
+    let mut backups = backup::Backups::new(backup_dir);
     let mut backup_tick = tokio::time::interval(backup::PERIOD);
     backup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut quitting = false;
     let result = async {
         loop {
             // Copies trouvées au démarrage : proposées une à une, avant les événements suivants.
             let ev = match backups.next_offer(&state) {
-                Some(ev) => ev,
+                Some((ev, adopt)) => {
+                    send_backup(adopt);
+                    ev
+                }
                 // On garde un `tx` pour les sauvegardes, donc `recv` ne finit jamais : on surveille la fin du lecteur.
                 None => tokio::select! {
                     biased;
+                    _ = &mut terminated => {
+                        tracing::warn!("signal de fin : dernière copie de secours, puis sortie");
+                        break;
+                    }
                     _ = backup_tick.tick() => {
+                        while let Ok(failure) = failures.try_recv() {
+                            backups.failed(failure);
+                        }
                         send_backup(backups.tick(&state));
                         continue;
                     }
                     Some(ev) = rx.recv() => ev,
+                    // Après `rx` : la session et le fichier en argument sont ouverts avant, l'onglet
+                    // actif rendu par `open_missing` est le bon.
+                    found = &mut scan, if scanning => {
+                        scanning = false;
+                        match found {
+                            Ok(offers) => {
+                                backup::open_missing(&state, &offers, tx.clone());
+                                backups.add_offers(offers);
+                            }
+                            Err(e) => tracing::error!("lecture des copies de secours : {e}"),
+                        }
+                        continue;
+                    }
                     _ = &mut reader => break,
                 },
             };
@@ -279,14 +305,13 @@ async fn run(
                     cmd @ (Command::RequestCompletion { .. }
                     | Command::RequestHover { .. }
                     | Command::RequestDefinition { .. }) => lsp.request(cmd),
-                    Command::DiscardBackup(path) => send_backup(vec![backups.discard(&path)]),
+                    // Alt+N comme Alt+B : l'offre réglée est traitée par `cleanup`.
+                    Command::DiscardBackup(_) => {}
                 }
             }
             send_backup(backups.cleanup(&state));
             if quit {
-                // Sortie normale : l'utilisateur a renoncé aux modifications non sauvegardées.
-                // Après un crash ou un kill, on ne passe pas ici : les copies restent.
-                send_backup(backups.quit(&state));
+                quitting = true;
                 if let Err(e) = session::save(&session_file, &state) {
                     tracing::warn!("écriture de la session : {e}");
                 }
@@ -298,40 +323,78 @@ async fn run(
         anyhow::Ok(())
     }
     .await;
+    // Sortie anormale (signal, terminal fermé, erreur) : dernière copie de tout ce qui est modifié,
+    // et les copies restent pour le prochain démarrage. Un crash ou un kill -9 ne passe pas ici.
+    if !quitting {
+        send_backup(backups.flush(&state));
+    }
     // Avant de quitter, on laisse finir les sauvegardes en attente ; sans `rx`, leurs événements sont ignorés.
     drop(rx);
     drop(save_tx);
+    match saver.await {
+        // Sortie normale : l'utilisateur a renoncé aux modifications non sauvegardées ; les copies
+        // ne sont supprimées qu'une fois les sauvegardes finies, sauf celles des sauvegardes en échec.
+        Ok(failed) if quitting => send_backup(backups.quit(&state, &failed)),
+        Ok(_) => {}
+        Err(e) => tracing::error!("tâche de sauvegarde : {e} (copies de secours gardées)"),
+    }
     drop(backup_tx);
-    lsp.shutdown().await;
     if let Err(e) = backup_worker.await {
         tracing::error!("tâche des copies de secours : {e}");
     }
-    if let Err(e) = saver.await {
-        tracing::error!("tâche de sauvegarde : {e}");
-    }
+    lsp.shutdown().await;
     result
 }
 
+/// SIGHUP ou SIGTERM reçu (rien hors Unix).
+fn terminate_signal() -> std::io::Result<futures::future::BoxFuture<'static, ()>> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let (mut hup, mut term) = (
+            signal(SignalKind::hangup())?,
+            signal(SignalKind::terminate())?,
+        );
+        Ok(Box::pin(async move {
+            tokio::select! {
+                _ = hup.recv() => {}
+                _ = term.recv() => {}
+            }
+        }))
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(Box::pin(std::future::pending()))
+    }
+}
+
 /// Sauvegardes hors de la boucle (NF-05), une à la fois ; chaque résultat revient comme un événement.
+/// Renvoie, à la fin, les chemins dont la dernière sauvegarde a échoué.
 async fn save_worker(
     mut jobs: mpsc::UnboundedReceiver<(PathBuf, String, u64)>,
     tx: mpsc::Sender<Event>,
-) {
+) -> Vec<PathBuf> {
+    let mut failed: Vec<PathBuf> = vec![];
     while let Some((path, contents, version)) = jobs.recv().await {
         let p = path.clone();
         let res = tokio::task::spawn_blocking(move || files::save_atomic(&p, &contents))
             .await
             .map_err(std::io::Error::other)
             .and_then(|r| r);
+        failed.retain(|p| *p != path);
         let ev = match res {
             Ok(()) => Event::Saved { path, version },
-            Err(e) => Event::SaveFailed {
-                path,
-                error: format!("échec de la sauvegarde : {e}"),
-            },
+            Err(e) => {
+                failed.push(path.clone());
+                Event::SaveFailed {
+                    path,
+                    error: format!("échec de la sauvegarde : {e}"),
+                }
+            }
         };
         let _ = tx.send(ev).await;
     }
+    failed
 }
 
 async fn read_terminal_events(tx: mpsc::Sender<Event>) {
@@ -460,7 +523,7 @@ mod tests {
             jobs_tx.send((p.clone(), "x".repeat(20_000 / v as usize), v))?;
         }
         drop(jobs_tx);
-        save_worker(jobs_rx, tx).await;
+        assert!(save_worker(jobs_rx, tx).await.is_empty());
         for v in 1..=20u64 {
             assert_eq!(
                 rx.recv().await,
@@ -472,6 +535,21 @@ mod tests {
         }
         // La dernière demande (la plus courte) gagne, même si les premières sont plus longues à écrire.
         assert_eq!(std::fs::read_to_string(&p)?, "x".repeat(1_000));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sauvegarde_en_echec_remontee_a_la_fin() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        // Parent qui est un fichier : l'écriture échoue.
+        std::fs::write(dir.path().join("f"), "")?;
+        let (bad, good) = (dir.path().join("f/a.txt"), dir.path().join("b.txt"));
+        let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(32);
+        jobs_tx.send((good.clone(), "x".into(), 1))?;
+        jobs_tx.send((bad.clone(), "x".into(), 1))?;
+        drop(jobs_tx);
+        assert_eq!(save_worker(jobs_rx, tx).await, vec![bad]);
         Ok(())
     }
 
