@@ -9,7 +9,7 @@ mod history;
 mod search;
 mod tabs;
 
-pub use document::{Document, Indent, LineEnding};
+pub use document::{Document, Indent, LineEnding, TextEdit};
 pub use editor::gutter_width;
 pub use explorer::{Explorer, FsChange, FsEntry, Node, Prompt, PromptKind};
 pub use search::Search;
@@ -176,6 +176,9 @@ pub struct State {
     /// Barre de recherche ouverte (Ctrl+F / Ctrl+H).
     pub search: Option<Search>,
     pub explorer: Explorer,
+    /// Coloration des lignes visibles du document actif, calculée par l'app avant chaque rendu :
+    /// plages en OCTETS de la rope, triées, sans chevauchement, et catégorie (`"keyword"`, `"string"`…).
+    pub highlights: Vec<(std::ops::Range<usize>, &'static str)>,
     pub focus: Focus,
 }
 

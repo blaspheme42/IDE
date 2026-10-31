@@ -79,6 +79,21 @@ pub struct Document {
     version: u64,
     saved_version: u64,
     history: History,
+    /// Éditions pas encore transmises à la coloration (`take_edits`).
+    edits: Vec<TextEdit>,
+    /// Identifiant attribué par l'app pour retrouver l'arbre syntaxique de ce document.
+    pub syntax_id: Option<u64>,
+}
+
+/// Une édition en octets et en (ligne, colonne-octet), avant/après, au format de `tree_sitter::InputEdit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextEdit {
+    pub start_byte: usize,
+    pub old_end_byte: usize,
+    pub new_end_byte: usize,
+    pub start: (usize, usize),
+    pub old_end: (usize, usize),
+    pub new_end: (usize, usize),
 }
 
 /// Bornes de graphèmes de `s`, en index de `char`, de 0 à `s.chars().count()` inclus.
@@ -300,8 +315,7 @@ impl Document {
         let mut changes = Vec::with_capacity(edits.len());
         for (r, text) in edits {
             let removed = self.rope.slice(r.clone()).to_string();
-            self.rope.remove(r.clone());
-            self.rope.insert(r.start, &text);
+            self.replace(r.clone(), &text);
             self.cursor = r.start + text.chars().count();
             changes.push(Change {
                 pos: r.start,
@@ -496,14 +510,43 @@ impl Document {
         }
     }
 
+    /// Seule mutation de la rope : remplace `range` (chars) par `text` et journalise l'édition en octets.
+    fn replace(&mut self, range: Range<usize>, text: &str) {
+        let point = |rope: &Rope, byte: usize| {
+            let line = rope.byte_to_line(byte);
+            (line, byte - rope.line_to_byte(line))
+        };
+        let start_byte = self.rope.char_to_byte(range.start);
+        let old_end_byte = self.rope.char_to_byte(range.end);
+        let (start, old_end) = (
+            point(&self.rope, start_byte),
+            point(&self.rope, old_end_byte),
+        );
+        self.rope.remove(range.clone());
+        self.rope.insert(range.start, text);
+        let new_end_byte = start_byte + text.len();
+        self.edits.push(TextEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start,
+            old_end,
+            new_end: point(&self.rope, new_end_byte),
+        });
+    }
+
+    /// Éditions depuis le dernier appel, dans l'ordre, à appliquer à l'arbre syntaxique.
+    pub fn take_edits(&mut self) -> Vec<TextEdit> {
+        std::mem::take(&mut self.edits)
+    }
+
     /// Annule le dernier groupe d'éditions ; `false` s'il n'y en a pas.
     pub fn undo(&mut self) -> bool {
         let Some(e) = self.history.undo.pop() else {
             return false;
         };
         for c in e.changes.iter().rev() {
-            self.rope.remove(c.pos..c.pos + c.inserted.chars().count());
-            self.rope.insert(c.pos, &c.removed);
+            self.replace(c.pos..c.pos + c.inserted.chars().count(), &c.removed);
         }
         (self.cursor, self.anchor) = e.before;
         self.version = e.version_before;
@@ -519,8 +562,7 @@ impl Document {
             return false;
         };
         for c in &e.changes {
-            self.rope.remove(c.pos..c.pos + c.removed.chars().count());
-            self.rope.insert(c.pos, &c.inserted);
+            self.replace(c.pos..c.pos + c.removed.chars().count(), &c.inserted);
         }
         (self.cursor, self.anchor) = e.after;
         self.version = e.version_after;
@@ -679,6 +721,55 @@ mod tests {
         assert_eq!(d.display_col(0, 5), 7);
         let d = doc("\tx");
         assert_eq!(d.display_col(0, 1), 4);
+    }
+
+    #[test]
+    fn journal_d_editions_rejouable_en_octets() {
+        // Rejoue chaque édition sur une copie : texte et points (ligne, colonne-octet) doivent suivre la rope.
+        let mut d = doc("é🦀\nab\n");
+        let mut copie = d.rope().to_string();
+        let mut check = |d: &mut Document| {
+            let edits = d.take_edits();
+            let texte = d.rope().to_string();
+            let point = |s: &str, b: usize| {
+                let ligne = s[..b].matches('\n').count();
+                (ligne, b - s[..b].rfind('\n').map_or(0, |i| i + 1))
+            };
+            if let [e] = edits.as_slice() {
+                // Une seule édition : on peut la rejouer avec le texte inséré lu dans la rope.
+                assert_eq!(e.start, point(&copie, e.start_byte));
+                assert_eq!(e.old_end, point(&copie, e.old_end_byte));
+                copie.replace_range(
+                    e.start_byte..e.old_end_byte,
+                    &texte[e.start_byte..e.new_end_byte],
+                );
+                assert_eq!(e.new_end, point(&copie, e.new_end_byte));
+            } else {
+                // Lot : au moins la somme des longueurs doit correspondre.
+                let delta: isize = edits
+                    .iter()
+                    .map(|e| e.new_end_byte as isize - e.old_end_byte as isize)
+                    .sum();
+                assert_eq!(copie.len() as isize + delta, texte.len() as isize);
+                copie = texte.clone();
+            }
+            assert_eq!(copie, texte);
+        };
+        d.move_right(false);
+        d.insert_str("x\ny");
+        check(&mut d);
+        d.move_down(1, false);
+        d.backspace();
+        check(&mut d);
+        d.select_all();
+        d.tab();
+        check(&mut d);
+        d.edit_many(vec![(0..1, "Z".into()), (3..5, "👍".into())]);
+        check(&mut d);
+        while d.undo() {}
+        check(&mut d);
+        while d.redo() {}
+        check(&mut d);
     }
 
     #[test]
