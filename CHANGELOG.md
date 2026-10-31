@@ -2,6 +2,23 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; une version par jalon.
 
+## [0.4.0] — 2026-10-31 · J4 LSP, début de J5
+
+### Ajouté
+- Client LSP maison (JSON-RPC sur stdio, délais et annulations) ; serveurs démarrés automatiquement selon le langage : rust-analyzer, pyright, clangd, ou `[lsp.<langage>]` dans la config utilisateur (F-40).
+- Complétion à la frappe et par Ctrl+Espace, plage du serveur respectée (F-41).
+- Diagnostics soulignés, marqueurs dans la gouttière, compteurs dans la barre de statut, panneau Problèmes (Ctrl+Shift+M), F8 / Shift+F8 (F-42).
+- F12 aller à la définition, Ctrl+K infobulle (F-43).
+- Serveur lent, absent ou planté : l'édition continue, redémarrage automatique (3 fois), diagnostics périmés effacés (NF-05).
+- Palettes : Ctrl+P fichiers du projet (recherche floue nucleo), Ctrl+Shift+P ou F1 commandes (F-50, F-51).
+- Branche git dans la barre de statut (F-70).
+- `[keys]` : raccourcis personnalisés vers les commandes de la palette.
+- Copie de secours des fichiers modifiés toutes les 30 s, proposée au redémarrage après un plantage (Alt+B restaurer, Alt+N ignorer) (NF-07).
+- Session : onglets, curseurs et défilement rouverts au démarrage sans argument (F-80).
+
+### Sécurité
+- La config d'un projet (`.ide/config.toml`) ne peut pas choisir de commande à exécuter : `[lsp.*]` y est refusé.
+
 ## [0.3.0] — 2026-10-31 · J3 Coloration
 
 ### Ajouté
