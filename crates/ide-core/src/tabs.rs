@@ -511,8 +511,6 @@ mod tests {
     }
 
     #[test]
-    // En attente d'explorer.rs : `explorer::key` doit rendre `None` pour Alt et Ctrl (autre codeur).
-    #[ignore]
     fn raccourcis_d_onglets_avec_le_focus_explorateur() {
         let mut s = trois();
         s.focus = crate::Focus::Explorer;
