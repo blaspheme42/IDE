@@ -143,6 +143,8 @@ pub enum Event {
         path: PathBuf,
         version: u64,
         items: Vec<CompletionItem>,
+        /// Liste tronquée par le serveur (`isIncomplete`) : chaque frappe la redemande.
+        incomplete: bool,
     },
     /// Réponse à `RequestHover` (`None` : rien à afficher).
     HoverResult {

@@ -126,9 +126,10 @@ pub(crate) fn strip_snippet(s: &str) -> String {
 }
 
 /// Réponse de `textDocument/completion` : `CompletionList`, tableau ou `null`.
-pub(crate) fn completion(v: &Value) -> Vec<CompletionItem> {
+/// Le booléen vaut `isIncomplete` (liste tronquée, à redemander à chaque frappe) ; tableau nu → `false`.
+pub(crate) fn completion(v: &Value) -> (Vec<CompletionItem>, bool) {
     let items = v.as_array().or_else(|| v["items"].as_array());
-    items
+    let items = items
         .into_iter()
         .flatten()
         .filter_map(|it| {
@@ -164,7 +165,8 @@ pub(crate) fn completion(v: &Value) -> Vec<CompletionItem> {
                 label,
             })
         })
-        .collect()
+        .collect();
+    (items, v["isIncomplete"].as_bool().unwrap_or(false))
 }
 
 /// Réponse de `textDocument/hover` : `MarkupContent`, `MarkedString` ou tableau → texte brut.

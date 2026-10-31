@@ -299,14 +299,15 @@ impl LspManager {
         tokio::spawn(async move {
             let ev = match cmd {
                 Command::RequestCompletion { path, version, pos } => {
-                    let items = match &client {
+                    let (items, incomplete) = match &client {
                         Some(c) => or_empty("completion", c.completion(&path, pos).await),
-                        None => Vec::new(),
+                        None => (Vec::new(), false),
                     };
                     Event::CompletionResult {
                         path,
                         version,
                         items,
+                        incomplete,
                     }
                 }
                 Command::RequestHover { path, pos } => {
@@ -527,7 +528,8 @@ mod tests {
         assert!(got.contains(&Event::CompletionResult {
             path: "/x/a.rs".into(),
             version: 7,
-            items: Vec::new()
+            items: Vec::new(),
+            incomplete: false,
         }));
         assert!(got.contains(&Event::HoverResult {
             path: "/x/a.rs".into(),
