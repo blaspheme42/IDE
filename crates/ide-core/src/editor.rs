@@ -29,6 +29,15 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             explorer::listed(state, dir, result);
             vec![]
         }
+        Event::DiskChanged(paths) => {
+            let mut cmds = explorer::disk_changed(state, &paths);
+            cmds.extend(tabs::disk_changed(state, &paths));
+            cmds
+        }
+        Event::FileChanged { path, text } => {
+            tabs::file_changed(state, path, text);
+            vec![]
+        }
         Event::ConfigLoaded { settings, errors } => {
             state.explorer.width = settings.explorer_width;
             state.explorer.show_hidden = settings.show_hidden;
@@ -213,6 +222,10 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     if search::key(state, k) {
         return vec![];
     }
+    // Après la recherche : ouverte, elle garde Alt+R (regex).
+    if tabs::conflict_key(state, k) {
+        return vec![];
+    }
     let page = usize::from(editor_size(state).1).max(1);
     let doc = &mut state.doc;
     if k.mods.ctrl && !k.mods.alt {
@@ -232,9 +245,12 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
                 Some(path) => {
                     state.status = "Sauvegarde…".into();
                     doc.seal_history();
+                    let contents = doc.to_saved_text();
+                    // Le watcher verra cette écriture : ce n'est pas un changement venu d'ailleurs.
+                    doc.remember_disk(&contents);
                     return vec![Command::Save {
                         path,
-                        contents: doc.to_saved_text(),
+                        contents,
                         version: doc.version(),
                     }];
                 }

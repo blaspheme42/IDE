@@ -9,6 +9,7 @@ license.workspace = true
 ide-core.workspace = true
 ec4rs.workspace = true
 ignore.workspace = true
+notify-debouncer-mini.workspace = true
 trash.workspace = true
 
 [dev-dependencies]

@@ -583,6 +583,25 @@ pub(crate) fn listed(state: &mut State, dir: PathBuf, result: Result<Vec<FsEntry
     ensure_visible(state);
 }
 
+/// `Event::DiskChanged` : re-liste (une fois) chaque dossier parent qui est la racine ou un dossier déplié ;
+/// `listed` garde sélection et dépliage.
+pub(crate) fn disk_changed(state: &State, paths: &[PathBuf]) -> Vec<Command> {
+    let ex = &state.explorer;
+    let mut cmds = vec![];
+    for dir in paths.iter().filter_map(|p| p.parent()) {
+        let known = ex.root.as_deref() == Some(dir)
+            || ex.nodes.iter().any(|n| n.expanded && n.entry.path == dir);
+        let cmd = Command::ListDir {
+            dir: dir.to_path_buf(),
+            show_hidden: ex.show_hidden,
+        };
+        if known && !cmds.contains(&cmd) {
+            cmds.push(cmd);
+        }
+    }
+    cmds
+}
+
 /// `Event::FsDone` : résultat d'une opération disque ; rafraîchit les dossiers concernés.
 pub(crate) fn fs_done(state: &mut State, result: Result<FsChange, String>) -> Vec<Command> {
     let change = match result {
@@ -1278,6 +1297,24 @@ mod tests {
         list(&mut s, ROOT.into(), &["a"]);
         assert_eq!(names(&s), vec![n("a", 0)]);
         assert_eq!(s.explorer.selected, 0);
+    }
+
+    #[test]
+    fn disque_change_reliste_les_dossiers_connus() {
+        let mut s = setup();
+        expand_a(&mut s);
+        let paths = [
+            "f.txt",
+            "nouveau",
+            "a/y.rs",
+            "a/z",
+            "b/w",
+            "a/x/q",
+            "ailleurs/k",
+        ];
+        let cmds = update(&mut s, Event::DiskChanged(paths.map(p).to_vec()));
+        // Racine et `a` (déplié) une fois chacun ; `b` et `a/x` repliés, `ailleurs` inconnu : rien.
+        assert_eq!(cmds, vec![ls(ROOT.into()), ls(p("a"))]);
     }
 
     #[test]

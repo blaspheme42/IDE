@@ -115,6 +115,13 @@ pub enum Event {
     },
     /// Réponse à `CreateFile` / `CreateDir` / `Rename` / `Trash`.
     FsDone(Result<FsChange, String>),
+    /// Chemins changés sur le disque (watcher de l'app), regroupés.
+    DiskChanged(Vec<PathBuf>),
+    /// Réponse à `Command::Reload` ; `None` = fichier disparu du disque.
+    FileChanged {
+        path: PathBuf,
+        text: Option<String>,
+    },
     /// Configuration chargée au démarrage ; `errors` : problèmes à signaler sans bloquer (clé inconnue, TOML invalide…).
     ConfigLoaded {
         settings: Settings,
@@ -151,6 +158,8 @@ pub enum Command {
     },
     /// Vers la corbeille, jamais de suppression définitive.
     Trash(PathBuf),
+    /// Relire un fichier ouvert, changé sur le disque → `Event::FileChanged`.
+    Reload(PathBuf),
 }
 
 /// Réglages lus dans `config.toml` (utilisateur puis projet) par l'app ; chaque clé a un défaut.
@@ -215,6 +224,9 @@ pub struct State {
     /// plages en OCTETS de la rope, triées, sans chevauchement, et catégorie (`"keyword"`, `"string"`…).
     pub highlights: Vec<(std::ops::Range<usize>, &'static str)>,
     pub focus: Focus,
+    /// Fichier modifié à la fois dans l'onglet et sur le disque : chemin et texte disque proposé
+    /// (Alt+R recharge, Alt+K garde la version de l'éditeur).
+    pub disk_conflict: Option<(PathBuf, String)>,
 }
 
 /// Largeur occupée par l'explorateur (0 s'il est masqué), partagée par l'UI et le calcul du défilement.

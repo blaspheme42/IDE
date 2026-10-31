@@ -49,6 +49,7 @@ fn execute(cmd: Command) -> Vec<Event> {
             FsChange::Renamed { from, to },
         ),
         Command::Trash(p) => done(ide_workspace::trash(&p), FsChange::Trashed(p)),
+        Command::Reload(path) => reload(path).into_iter().collect(),
         Command::Quit
         | Command::Save { .. }
         | Command::CopyToClipboard(_)
@@ -56,6 +57,20 @@ fn execute(cmd: Command) -> Vec<Event> {
             vec![]
         }
     }
+}
+
+/// Relit un fichier ouvert changé sur le disque ; `None` = illisible autrement que disparu
+/// (non UTF-8, permission…) : on n'en dit rien, l'onglet garde son texte.
+fn reload(path: PathBuf) -> Option<Event> {
+    let text = match files::read_file(&path) {
+        Ok(text) => Some(text),
+        Err(e) if e == files::NEW_FILE => None,
+        Err(e) => {
+            tracing::warn!("relecture de {} : {e}", path.display());
+            return None;
+        }
+    };
+    Some(Event::FileChanged { path, text })
 }
 
 /// Événement d'échec de `cmd`, quand sa tâche a paniqué.
@@ -70,6 +85,8 @@ fn failure(cmd: Command, error: String) -> Event {
             error,
             create: false,
         },
+        // Rien à relire : `FileChanged { text: None }` marquerait à tort le fichier comme disparu.
+        Command::Reload(_) => Event::Tick,
         _ => Event::FsDone(Err(error)),
     }
 }
@@ -217,6 +234,33 @@ mod tests {
         std::fs::write(&bin, [0xff, 0xfe])?;
         let evs = run(Command::OpenFile(bin), 2).await;
         assert!(matches!(&evs[0], Event::OpenFailed { create: false, .. }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn relecture_d_un_fichier_change() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let p = dir.path().join("a.txt");
+        std::fs::write(&p, "neuf")?;
+        let evs = run(Command::Reload(p.clone()), 1).await;
+        let attendu = Event::FileChanged {
+            path: p.clone(),
+            text: Some("neuf".into()),
+        };
+        assert_eq!(evs[0], attendu);
+        std::fs::remove_file(&p)?;
+        let evs = run(Command::Reload(p.clone()), 1).await;
+        assert_eq!(
+            evs[0],
+            Event::FileChanged {
+                path: p,
+                text: None
+            }
+        );
+        // Illisible (non UTF-8) : rien, l'onglet garde son texte.
+        let bin = dir.path().join("bin");
+        std::fs::write(&bin, [0xff, 0xfe])?;
+        run(Command::Reload(bin), 0).await;
         Ok(())
     }
 

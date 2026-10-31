@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use unicode_width::UnicodeWidthStr;
 
-use crate::{Document, FsChange, Key, KeyInput, State, explorer_width, search};
+use crate::{Command, Document, FsChange, Key, KeyInput, State, explorer_width, search};
 
 /// Ligne de la barre d'onglets, en haut de la zone éditeur.
 pub const TAB_BAR_HEIGHT: u16 = 1;
@@ -228,6 +228,99 @@ pub(crate) fn on_fs_change(state: &mut State, change: &FsChange) {
     }
 }
 
+/// `Event::DiskChanged` : relire chaque fichier ouvert dans un onglet (une fois).
+pub(crate) fn disk_changed(state: &State, paths: &[PathBuf]) -> Vec<Command> {
+    let mut cmds = vec![];
+    for p in paths {
+        let cmd = Command::Reload(p.clone());
+        if find(state, p).is_some() && !cmds.contains(&cmd) {
+            cmds.push(cmd);
+        }
+    }
+    cmds
+}
+
+/// Remplace tout le texte par `text` (disque) en une édition annulable : Ctrl+Z ramène l'ancien
+/// contenu. Curseur gardé, borné ; la fin de ligne détectée, elle, n'est pas annulée. Document propre.
+fn reload(doc: &mut Document, text: &str) {
+    let fresh = Document::from_text(None, text);
+    let cursor = doc.cursor();
+    doc.line_ending = fresh.line_ending;
+    doc.edit(0..doc.rope().len_chars(), &fresh.rope().to_string());
+    doc.set_cursor(cursor, false);
+    doc.mark_saved(doc.version());
+    doc.remember_disk(text);
+}
+
+/// `Event::FileChanged` (NF-09) : contenu déjà connu → rien ; onglet propre → rechargé ;
+/// onglet modifié → rien d'écrasé, proposition dans `disk_conflict` ; disparu → marqué modifié.
+pub(crate) fn file_changed(state: &mut State, path: PathBuf, text: Option<String>) {
+    let conflict_here = state
+        .disk_conflict
+        .as_ref()
+        .is_some_and(|(p, _)| *p == path);
+    let Some(doc) = doc_mut(state, &path) else {
+        return;
+    };
+    let name = doc.display_name();
+    let Some(text) = text else {
+        doc.mark_unsaved();
+        if conflict_here {
+            state.disk_conflict = None;
+        }
+        state.status = format!("{name} supprimé du disque : Ctrl+S le recréera");
+        return;
+    };
+    if doc.knows_disk(&text) || doc.to_saved_text() == text {
+        // Notre propre sauvegarde (ou un contenu identique) : un éventuel conflit est réglé.
+        doc.remember_disk(&text);
+        if conflict_here {
+            state.disk_conflict = None;
+        }
+        return;
+    }
+    if !doc.is_dirty() {
+        reload(doc, &text);
+        state.status = format!("{name} rechargé depuis le disque");
+        return;
+    }
+    state.status = format!(
+        "{name} modifié sur le disque : Alt+R recharger (perd vos modifications), Alt+K garder les vôtres"
+    );
+    state.disk_conflict = Some((path, text));
+}
+
+/// Alt+R / Alt+K quand un conflit disque est proposé ; `false` = touche laissée à la suite.
+/// La barre de recherche, ouverte, passe avant (Alt+R y bascule la regex).
+pub(crate) fn conflict_key(state: &mut State, k: KeyInput) -> bool {
+    let reload_key = match k.key {
+        Key::Char('r' | 'R') => true,
+        Key::Char('k' | 'K') => false,
+        _ => return false,
+    };
+    if !k.mods.alt || k.mods.ctrl {
+        return false;
+    }
+    let Some((path, text)) = state.disk_conflict.take() else {
+        return false;
+    };
+    let Some(doc) = doc_mut(state, &path) else {
+        state.status.clear();
+        return true;
+    };
+    let name = doc.display_name();
+    if reload_key {
+        reload(doc, &text);
+        state.status =
+            format!("{name} rechargé depuis le disque (Ctrl+Z ramène vos modifications)");
+    } else {
+        // Choix explicite : le disque est connu, Ctrl+S l'écrasera.
+        doc.remember_disk(&text);
+        state.status = format!("{name} : version de l'éditeur gardée, Ctrl+S écrasera le disque");
+    }
+    true
+}
+
 /// Raccourcis d'onglets ; `false` = touche laissée à la suite.
 pub(crate) fn key(state: &mut State, k: KeyInput) -> bool {
     let n = state.tabs.len() + 1;
@@ -269,7 +362,7 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> bool {
 mod tests {
     use super::*;
     use crate::FsChange;
-    use crate::{Command, Event, Modifiers, MouseInput, MouseKind, Search, editor_size, update};
+    use crate::{Event, Modifiers, MouseInput, MouseKind, Search, editor_size, update};
 
     fn touche(key: Key, ctrl: bool, alt: bool, shift: bool) -> Event {
         Event::Key(KeyInput {
@@ -633,6 +726,141 @@ mod tests {
         update(&mut s, touche(Key::Char('1'), false, true, false));
         assert_eq!(tab_scroll(&s), 0);
         assert_eq!(tab_spans(&s), [(30..37, 0), (38..45, 1)]);
+    }
+
+    fn disque(s: &mut State, path: &str, text: Option<&str>) {
+        update(
+            s,
+            Event::FileChanged {
+                path: path.into(),
+                text: text.map(Into::into),
+            },
+        );
+    }
+    fn alt(c: char) -> Event {
+        touche(Key::Char(c), false, true, false)
+    }
+
+    #[test]
+    fn disque_change_relit_les_onglets_ouverts() {
+        let mut s = trois();
+        let paths = ["/x/a.txt", "/x/c.txt", "/x/z.txt", "/x/a.txt"].map(PathBuf::from);
+        let cmds = update(&mut s, Event::DiskChanged(paths.to_vec()));
+        let attendu = ["/x/a.txt", "/x/c.txt"].map(|p| Command::Reload(p.into()));
+        assert_eq!(cmds, attendu);
+    }
+
+    #[test]
+    fn contenu_identique_ou_notre_sauvegarde_ne_fait_rien() {
+        let mut s = trois();
+        let v = s.doc.version();
+        s.status.clear();
+        disque(&mut s, "/x/c.txt", Some("ccc"));
+        assert_eq!((s.doc.version(), s.status.as_str()), (v, ""));
+        // Sauvegarde puis frappe : le watcher relit ce qu'on a écrit, pas de conflit.
+        update(&mut s, touche(Key::Char('x'), false, false, false));
+        update(&mut s, ctrl('s'));
+        update(&mut s, touche(Key::Char('y'), false, false, false));
+        disque(&mut s, "/x/c.txt", Some("xccc"));
+        assert!(s.disk_conflict.is_none());
+        assert_eq!(s.doc.rope().to_string(), "xyccc");
+    }
+
+    #[test]
+    fn onglet_propre_recharge_curseur_borne() {
+        let mut s = trois();
+        update(&mut s, touche(Key::End, false, false, false));
+        disque(&mut s, "/x/c.txt", Some("z\r\n"));
+        assert_eq!(s.doc.rope().to_string(), "z\n");
+        assert_eq!(s.doc.cursor(), 2);
+        assert!(!s.doc.is_dirty());
+        assert_eq!(s.doc.to_saved_text(), "z\r\n");
+        assert!(s.status.contains("rechargé"), "{}", s.status);
+        // Le rechargement est annulable.
+        update(&mut s, ctrl('z'));
+        assert_eq!(s.doc.rope().to_string(), "ccc");
+    }
+
+    #[test]
+    fn onglet_inactif_propre_recharge() {
+        let mut s = trois();
+        disque(&mut s, "/x/a.txt", Some("nouveau"));
+        assert_eq!(actif(&s), "c.txt");
+        update(&mut s, touche(Key::Char('1'), false, true, false));
+        assert_eq!(s.doc.rope().to_string(), "nouveau");
+        assert!(!s.doc.is_dirty());
+    }
+
+    #[test]
+    fn onglet_modifie_conflit_alt_k_garde() {
+        let mut s = trois();
+        update(&mut s, touche(Key::Char('m'), false, false, false));
+        disque(&mut s, "/x/c.txt", Some("disque"));
+        assert_eq!(s.doc.rope().to_string(), "mccc");
+        assert!(s.status.contains("Alt+R recharger"), "{}", s.status);
+        assert_eq!(
+            s.disk_conflict,
+            Some((PathBuf::from("/x/c.txt"), "disque".into()))
+        );
+        update(&mut s, alt('k'));
+        assert!(s.disk_conflict.is_none());
+        assert_eq!(s.doc.rope().to_string(), "mccc");
+        assert!(s.doc.is_dirty());
+        // Plus de conflit : Alt+K redevient une touche ordinaire, le même contenu disque n'en recrée pas.
+        update(&mut s, alt('k'));
+        assert_eq!(s.status, "Alt+K");
+        disque(&mut s, "/x/c.txt", Some("disque"));
+        assert!(s.disk_conflict.is_none());
+        let cmds = update(&mut s, ctrl('s'));
+        assert!(matches!(&cmds[..], [Command::Save { contents, .. }] if contents == "mccc"));
+    }
+
+    #[test]
+    fn onglet_modifie_conflit_alt_r_recharge_et_ctrl_z() {
+        let mut s = trois();
+        update(&mut s, touche(Key::Char('m'), false, false, false));
+        disque(&mut s, "/x/c.txt", Some("disque"));
+        update(&mut s, alt('r'));
+        assert_eq!(s.doc.rope().to_string(), "disque");
+        assert!(!s.doc.is_dirty() && s.disk_conflict.is_none());
+        update(&mut s, ctrl('z'));
+        assert_eq!(s.doc.rope().to_string(), "mccc");
+        assert!(s.doc.is_dirty());
+    }
+
+    #[test]
+    fn conflit_sur_onglet_inactif_et_recherche_prioritaire() {
+        let mut s = trois();
+        update(&mut s, touche(Key::Char('1'), false, true, false));
+        update(&mut s, touche(Key::Char('m'), false, false, false));
+        update(&mut s, touche(Key::Char('3'), false, true, false));
+        disque(&mut s, "/x/a.txt", Some("disque"));
+        assert!(s.disk_conflict.is_some());
+        // Recherche ouverte : Alt+R bascule la regex, le conflit attend.
+        update(&mut s, ctrl('f'));
+        update(&mut s, alt('r'));
+        assert!(s.disk_conflict.is_some());
+        update(&mut s, touche(Key::Esc, false, false, false));
+        update(&mut s, alt('r'));
+        assert!(s.disk_conflict.is_none());
+        assert_eq!(actif(&s), "c.txt");
+        update(&mut s, touche(Key::Char('1'), false, true, false));
+        assert_eq!(s.doc.rope().to_string(), "disque");
+    }
+
+    #[test]
+    fn fichier_supprime_du_disque_marque_modifie() {
+        let mut s = trois();
+        disque(&mut s, "/x/b.txt", None);
+        assert!(s.status.contains("supprimé du disque"), "{}", s.status);
+        assert_eq!(
+            noms(&s).into_iter().map(|t| t.1).collect::<Vec<_>>(),
+            [false, true, false]
+        );
+        assert_eq!(tab_list(&s).len(), 3);
+        // Fichier non ouvert : rien.
+        disque(&mut s, "/x/z.txt", None);
+        assert!(tab_list(&s).iter().filter(|t| t.dirty).count() == 1);
     }
 
     #[test]
