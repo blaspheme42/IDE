@@ -2,6 +2,7 @@
 
 mod clipboard;
 mod files;
+mod highlight;
 mod workspace;
 
 use std::path::PathBuf;
@@ -85,6 +86,8 @@ async fn run(
     }
     let mut reader = tokio::spawn(read_terminal_events(tx.clone()));
 
+    let mut highlighter = highlight::Highlighter::default();
+    highlighter.sync(&mut state);
     terminal.draw(|f| ide_ui::render(&state, f))?;
     if panic_test {
         panic!("--panic-test : panic volontaire après le premier rendu");
@@ -130,6 +133,7 @@ async fn run(
             if quit {
                 break;
             }
+            highlighter.sync(&mut state);
             terminal.draw(|f| ide_ui::render(&state, f))?;
         }
         anyhow::Ok(())

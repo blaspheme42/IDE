@@ -282,3 +282,13 @@ fn perf_10_000_lignes() {
     println!("bloc plat : frappe + 50 lignes en {:?}", frappe(&mut flat));
     assert!(dt.as_millis() < 16, "{dt:?}");
 }
+
+#[test]
+fn noms_en_minuscules() {
+    assert_eq!(Highlight::Keyword.name(), "keyword");
+    assert_eq!(Highlight::Punctuation.name(), "punctuation");
+    assert_eq!(
+        Highlight::Emphasis.name(),
+        format!("{:?}", Highlight::Emphasis).to_lowercase()
+    );
+}
