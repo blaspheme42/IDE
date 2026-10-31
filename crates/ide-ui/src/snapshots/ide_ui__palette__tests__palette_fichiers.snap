@@ -1,0 +1,28 @@
+---
+source: crates/ide-ui/src/palette.rs
+expression: b
+---
+"┌ EXPLORATEUR ───────────────┐ a.rs                                             "
+"│               ┌ Ouvrir un fichier ───────────────────────────┐                "
+"│               │> rs                                          │                "
+"│               │main.rs                                    src│                "
+"│               │lib.rs                       crates/ide-ui/src│                "
+"│               │Cargo.toml                                    │                "
+"│               └──────────────────────────────────────────────┘                "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"└────────────────────────────┘                                                  "
+" a.rs | Prêt                                           Ln 1, Col 1 | LF | UTF-8 "
