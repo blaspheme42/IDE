@@ -19,6 +19,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let started = std::time::Instant::now();
     let _log_guard = init_logging()?;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let panic_test = args.iter().any(|a| a == "--panic-test");
@@ -44,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     {
         tracing::warn!("activation souris / collage : {e}");
     }
-    let result = run(&mut terminal, panic_test, root, file).await;
+    let result = run(&mut terminal, panic_test, root, file, started).await;
     disable_mouse_and_paste();
     ratatui::restore();
     if let Err(e) = &result {
@@ -67,6 +68,7 @@ async fn run(
     panic_test: bool,
     root: PathBuf,
     file: Option<PathBuf>,
+    started: std::time::Instant,
 ) -> anyhow::Result<()> {
     let size = terminal.size()?;
     let mut state = State {
@@ -88,17 +90,29 @@ async fn run(
     // Appliquée tout de suite : le premier rendu a déjà le bon thème (pas de flash sombre).
     let config = Event::ConfigLoaded { settings, errors };
     ide_core::update(&mut state, config.clone());
-    // Surveillance du disque (F-05, NF-09), active tant que `_watcher` vit ; depuis le thread du watcher,
-    // `blocking_send` n'attend que lui, jamais la boucle.
-    let watch_tx = tx.clone();
-    let _watcher = ide_workspace::watch(&root, move |paths| {
-        let _ = watch_tx.blocking_send(Event::DiskChanged(paths));
-    })
-    .inspect_err(|e| {
-        tracing::warn!("{e}");
-        state.status = format!("Rafraîchissement automatique désactivé : {e}");
-    })
-    .ok();
+    // Surveillance du disque (F-05, NF-09), lancée en fond : inscrire récursivement un gros arbre
+    // (target/…) prend des centaines de ms, le premier rendu ne doit pas l'attendre (NF-01).
+    let (watch_tx, watch_root) = (tx.clone(), root.clone());
+    tokio::spawn(async move {
+        let err_tx = watch_tx.clone();
+        let started = tokio::task::spawn_blocking(move || {
+            // Depuis le thread du watcher, `blocking_send` n'attend que lui, jamais la boucle.
+            ide_workspace::watch(&watch_root, move |paths| {
+                let _ = watch_tx.blocking_send(Event::DiskChanged(paths));
+            })
+        })
+        .await;
+        match started {
+            // Le watcher vit tant que cette tâche vit, c'est-à-dire jusqu'à l'arrêt du runtime.
+            Ok(Ok(_watcher)) => std::future::pending::<()>().await,
+            Ok(Err(e)) => {
+                tracing::warn!("{e}");
+                let msg = format!("rafraîchissement automatique désactivé : {e}");
+                let _ = err_tx.send(Event::FsDone(Err(msg))).await;
+            }
+            Err(e) => tracing::warn!("watcher : {e}"),
+        }
+    });
     tx.send(Event::OpenRoot(root)).await?;
     // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
     if let Some(path) = file {
@@ -115,6 +129,10 @@ async fn run(
     let mut highlighter = highlight::Highlighter::default();
     highlighter.sync(&mut state);
     terminal.draw(|f| ide_ui::render(&state, f))?;
+    tracing::info!(
+        "premier rendu en {:?} (NF-01 : < 100 ms)",
+        started.elapsed()
+    );
     if panic_test {
         panic!("--panic-test : panic volontaire après le premier rendu");
     }
