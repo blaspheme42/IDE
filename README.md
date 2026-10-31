@@ -57,7 +57,7 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 
 - `ide [dossier|fichier]` : sans argument, l'explorateur s'ouvre sur le dossier courant ; avec un dossier, sur ce dossier ; avec un fichier, l'ouvre (créé à la première sauvegarde s'il n'existe pas) avec pour racine le dossier courant s'il le contient, sinon le dossier du fichier.
 - `Ctrl+S` : sauvegarder.
-- Flèches, `Début`/`Fin`, `Page préc.`/`Page suiv.` : se déplacer ; avec `Shift`, sélectionner. `Ctrl+A` : tout sélectionner.
+- Flèches, `Début`/`Fin`, `Page préc.`/`Page suiv.` : se déplacer ; `Ctrl+←`/`Ctrl+→` par mot, `Ctrl+Début`/`Ctrl+Fin` début/fin du fichier ; avec `Shift`, sélectionner. `Ctrl+A` : tout sélectionner. `Alt+Retour arrière` (ou `Ctrl+Retour arrière` si le terminal le distingue) : effacer le mot précédent.
 - Souris : clic pour placer le curseur, glisser ou `Shift+clic` pour sélectionner, molette pour défiler. La sélection native du terminal reste possible avec `Shift`+glisser (selon le terminal).
 - `Ctrl+Z` / `Ctrl+Y` (ou `Ctrl+Shift+Z`) : annuler / rétablir, sans limite.
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` : copier / couper / coller (sans sélection : la ligne entière). Presse-papiers système, ou interne si aucun n'est disponible (SSH).

@@ -360,7 +360,12 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         return vec![];
     }
     if k.mods.alt {
-        state.status = k.to_string();
+        // Alt+Retour arrière : la plupart des terminaux envoient Ctrl+Retour arrière comme Ctrl+H.
+        if k.key == Key::Backspace && !k.mods.ctrl {
+            doc.delete_word_before();
+        } else {
+            state.status = k.to_string();
+        }
         return vec![];
     }
     let ext = k.mods.shift;
@@ -677,6 +682,23 @@ mod tests {
         for invalide in ["", "ctrl+", "hyper+x", "f99", "ctrl+ab"] {
             assert_eq!(crate::KeyInput::parse(invalide), None, "{invalide}");
         }
+    }
+
+    #[test]
+    fn alt_retour_arriere_efface_le_mot() {
+        let mut s = opened("un deux");
+        update(&mut s, k(Key::End));
+        update(
+            &mut s,
+            Event::Key(KeyInput {
+                key: Key::Backspace,
+                mods: Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                },
+            }),
+        );
+        assert_eq!(s.doc.rope().to_string(), "un ");
     }
 
     #[test]
