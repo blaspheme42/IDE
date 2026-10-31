@@ -349,6 +349,12 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
             Key::Char('v' | 'V') => return vec![Command::RequestPaste],
             Key::Char('f' | 'F') => search::open(state, false),
             Key::Char('h' | 'H') => search::open(state, true),
+            // Shift étend la sélection, comme pour les déplacements simples.
+            Key::Home => doc.set_cursor(0, k.mods.shift),
+            Key::End => doc.set_cursor(doc.rope().len_chars(), k.mods.shift),
+            Key::Left => doc.move_word(false, k.mods.shift),
+            Key::Right => doc.move_word(true, k.mods.shift),
+            Key::Backspace => doc.delete_word_before(),
             _ => state.status = k.to_string(),
         }
         return vec![];

@@ -715,6 +715,57 @@ impl Document {
         let line = self.rope.char_to_line(self.cursor);
         self.set_cursor(self.rope.line_to_char(line) + self.line_len(line), extend);
     }
+
+    /// Début du mot suivant / précédent (Ctrl+→ / Ctrl+←, comme VSCode) : saute les blancs, puis un groupe
+    /// de caractères de même nature (lettres/chiffres/_ ou ponctuation). Un saut de ligne compte comme un blanc.
+    fn word_boundary(&self, forward: bool) -> usize {
+        let class = |c: char| {
+            if c.is_whitespace() {
+                0
+            } else if c.is_alphanumeric() || c == '_' {
+                1
+            } else {
+                2
+            }
+        };
+        let len = self.rope.len_chars();
+        let mut p = self.cursor;
+        let at = |p: usize| self.rope.char(p);
+        if forward {
+            while p < len && class(at(p)) == 0 {
+                p += 1;
+            }
+            let k = if p < len { class(at(p)) } else { 0 };
+            while p < len && class(at(p)) == k && k != 0 {
+                p += 1;
+            }
+        } else {
+            while p > 0 && class(at(p - 1)) == 0 {
+                p -= 1;
+            }
+            let k = if p > 0 { class(at(p - 1)) } else { 0 };
+            while p > 0 && class(at(p - 1)) == k && k != 0 {
+                p -= 1;
+            }
+        }
+        p
+    }
+
+    pub fn move_word(&mut self, forward: bool, extend: bool) {
+        let p = self.word_boundary(forward);
+        self.set_cursor(p, extend);
+    }
+
+    /// Ctrl+Retour arrière : supprime la sélection, sinon jusqu'au début du mot précédent.
+    pub fn delete_word_before(&mut self) {
+        if self.selection().is_some() {
+            return self.backspace();
+        }
+        let p = self.word_boundary(false);
+        if p < self.cursor {
+            self.edit(p..self.cursor, "");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -860,6 +911,25 @@ mod tests {
         check(&mut d);
         while d.redo() {}
         check(&mut d);
+    }
+
+    #[test]
+    fn deplacement_par_mot() {
+        let mut d = doc("let x_1 = foo.bar();\n  é2");
+        let mut sauts = vec![];
+        for _ in 0..9 {
+            d.move_word(true, false);
+            sauts.push(d.cursor());
+        }
+        // let | x_1 | = | foo | . | bar | (); | é2 | fin
+        assert_eq!(sauts, [3, 7, 9, 13, 14, 17, 20, 25, 25]);
+        d.move_word(false, false);
+        assert_eq!(d.cursor(), 23);
+        d.move_word(false, true);
+        assert_eq!(d.selection(), Some(17..23));
+        d.set_cursor(13, false);
+        d.delete_word_before();
+        assert_eq!(d.rope().to_string(), "let x_1 = .bar();\n  é2");
     }
 
     #[test]
