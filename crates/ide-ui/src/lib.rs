@@ -934,6 +934,7 @@ mod tests {
             items,
             selected,
             anchor,
+            path: None,
         });
         s
     }
@@ -948,7 +949,8 @@ mod tests {
         let items = vec![
             item("stdin", "fn", Some("fn() -> Stdin")),
             item("stdout_long", "fn", None),
-            item("x", "struct", None),
+            // Filtrée par « st » (le mot tapé) : « xst » reste visible, en dernier.
+            item("xst", "struct", None),
         ];
         let b = draw(&complete(0, items, 1));
         // Bord gauche une cellule avant `st` (colonne 12) ; largeur 6 + 1 + 11 + 2 = 20.
@@ -957,7 +959,7 @@ mod tests {
         // Détail tronqué, calé à droite dans la place restante.
         assert_eq!(cells(&b, Y + 2, x..x + 20), "│fn     stdin fn() │");
         assert_eq!(cells(&b, Y + 3, x..x + 20), "│fn     stdout_long│");
-        assert_eq!(cells(&b, Y + 4, x..x + 20), "│struct x          │");
+        assert_eq!(cells(&b, Y + 4, x..x + 20), "│struct xst        │");
         assert_eq!(cells(&b, Y + 5, x..x + 20), format!("└{}┘", "─".repeat(18)));
         // Sélection surlignée, kind estompé.
         let t = Theme::dark();
@@ -983,13 +985,13 @@ mod tests {
     #[test]
     fn popup_defile_vers_la_selection() {
         let items = (0..15)
-            .map(|i| item(&format!("item{i:02}"), "fn", None))
+            .map(|i| item(&format!("st{i:02}"), "fn", None))
             .collect();
         let b = draw(&complete(0, items, 12));
         let x = X + 11;
         // 10 lignes visibles : 03..=12, la sélection en dernier.
-        assert_eq!(cells(&b, Y + 2, x..x + 10), "│fn item03");
-        assert_eq!(cells(&b, Y + 11, x..x + 10), "│fn item12");
+        assert_eq!(cells(&b, Y + 2, x..x + 8), "│fn st03");
+        assert_eq!(cells(&b, Y + 11, x..x + 8), "│fn st12");
         assert_eq!(cells(&b, Y + 12, x..x + 3), "└──");
         assert!(a_style(
             &b.buffer()[(x + 4, Y + 11)],

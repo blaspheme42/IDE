@@ -1,45 +1,18 @@
 //! Rendu LSP (J4) : soulignement des diagnostics, popup de complétion, infobulle, panneau Problèmes.
 
-use ide_core::{CompletionItem, Diagnostic, Severity, State};
+use ide_core::{Severity, State};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use std::ops::Range;
-use std::path::PathBuf;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::theme::Theme;
 
-// remplacé par ide_core::PROBLEMS_HEIGHT à l'intégration
-pub(crate) const PROBLEMS_HEIGHT: u16 = 8;
-
-/// Éléments de complétion affichés. // remplacé par ide_core::visible_completions à l'intégration
-fn visible_completions(state: &State) -> Vec<&CompletionItem> {
-    state
-        .completion
-        .as_ref()
-        .map_or_else(Vec::new, |c| c.items.iter().collect())
-}
-
-/// Tous les diagnostics, triés par fichier puis position. // remplacé par ide_core::problems à l'intégration
-fn problems(state: &State) -> Vec<(PathBuf, Diagnostic)> {
-    let mut v: Vec<_> = state
-        .diagnostics
-        .iter()
-        .flat_map(|(p, ds)| ds.iter().map(|d| (p.clone(), d.clone())))
-        .collect();
-    v.sort_by(|(p, a), (q, b)| (p, a.start, a.severity).cmp(&(q, b.start, b.severity)));
-    v
-}
-
-/// (erreurs, avertissements) de tous les fichiers. // remplacé par ide_core::diagnostic_counts à l'intégration
-pub(crate) fn diagnostic_counts(state: &State) -> (usize, usize) {
-    let all = state.diagnostics.values().flatten();
-    let n = |s| all.clone().filter(|d| d.severity == s).count();
-    (n(Severity::Error), n(Severity::Warning))
-}
+pub(crate) use ide_core::{PROBLEMS_HEIGHT, diagnostic_counts};
+use ide_core::{problems, visible_completions};
 
 /// Symbole d'une sévérité, ASCII sans Nerd Font.
 pub(crate) fn icon(s: Severity, nerd: bool) -> &'static str {
