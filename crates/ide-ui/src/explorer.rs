@@ -18,8 +18,6 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::icons::{IconSet, icon};
 use crate::theme::Theme;
 
-/// Jeu d'icônes ; deviendra un réglage avec la configuration.
-const ICONS: IconSet = IconSet::Nerd;
 const LOADING: &str = " …";
 
 /// Dessine l'explorateur dans `area` (bordures comprises).
@@ -27,6 +25,11 @@ pub(crate) fn render(state: &State, frame: &mut Frame, area: Rect, theme: &Theme
     let ex = &state.explorer;
     let focus = state.focus == Focus::Explorer;
     let dim = Style::new().fg(theme.muted);
+    let icons = if state.settings.nerd_icons {
+        IconSet::Nerd
+    } else {
+        IconSet::Ascii
+    };
     let title = ex.root.as_ref().map_or(" EXPLORATEUR ".into(), |r| {
         let name = r.file_name().unwrap_or(r.as_os_str()).to_string_lossy();
         format!(" {} ", name.to_uppercase())
@@ -71,7 +74,7 @@ pub(crate) fn render(state: &State, frame: &mut Frame, area: Rect, theme: &Theme
             ..inner
         };
         let e = &node.entry;
-        let (glyph, color) = icon(&e.name, e.is_dir, node.expanded, ICONS);
+        let (glyph, color) = icon(&e.name, e.is_dir, node.expanded, icons);
         let indent = 2 * node.depth;
         let marker = if node.loading { LOADING } else { "" };
         let avail = width.saturating_sub(indent + 2 + marker.width());
@@ -299,10 +302,24 @@ mod tests {
         let b = draw(&state());
         let cell = |x, y| b.buffer()[(x, y)].clone();
         // `main.rs` (ligne 4, profondeur 1) : icône Rust en x = 3, nom en x = 5.
-        assert_eq!(cell(3, 4).fg, icon("main.rs", false, false, ICONS).1);
+        assert_eq!(
+            cell(3, 4).fg,
+            icon("main.rs", false, false, IconSet::Nerd).1
+        );
         assert_ne!(cell(3, 4).fg, Color::Reset);
         assert!(cell(5, 4).modifier.contains(Modifier::BOLD));
         assert!(!cell(3, 7).modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn icones_ascii() {
+        let mut s = state();
+        s.settings.nerd_icons = false;
+        let b = draw(&s);
+        insta::assert_snapshot!(b);
+        // `src` déplié, `main.rs`, `target` replié.
+        let sym = |x, y| b.buffer()[(x, y)].symbol().to_string();
+        assert_eq!([sym(1, 1), sym(3, 4), sym(1, 5)], ["-", "*", "+"]);
     }
 
     #[test]
