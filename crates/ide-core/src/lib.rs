@@ -19,7 +19,9 @@ pub use lsp::{
     PROBLEMS_HEIGHT, Position, Severity, default_servers, diagnostic_counts, problems,
     visible_completions,
 };
-pub use palette::{Palette, PaletteItem, PaletteKind, palette_items};
+pub use palette::{
+    CommandInfo, Palette, PaletteItem, PaletteKind, command_by_name, commands, palette_items,
+};
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
 

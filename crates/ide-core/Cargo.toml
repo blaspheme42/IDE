@@ -8,6 +8,7 @@ license.workspace = true
 # Zéro I/O : aucune dépendance terminal, async ou disque ici.
 [dependencies]
 regex.workspace = true
+nucleo-matcher.workspace = true
 ropey.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
