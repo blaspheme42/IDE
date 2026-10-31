@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ide-core.workspace = true
+ide-syntax.workspace = true
 ide-ui.workspace = true
 ide-workspace.workspace = true
 ratatui.workspace = true

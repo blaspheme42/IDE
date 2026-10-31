@@ -153,6 +153,32 @@ pub enum Highlight {
 }
 
 impl Highlight {
+    /// Nom de la variante en minuscules (`"keyword"`…), clé des thèmes de l'UI.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Keyword => "keyword",
+            Self::Function => "function",
+            Self::Type => "type",
+            Self::String => "string",
+            Self::Number => "number",
+            Self::Comment => "comment",
+            Self::Constant => "constant",
+            Self::Variable => "variable",
+            Self::Property => "property",
+            Self::Operator => "operator",
+            Self::Punctuation => "punctuation",
+            Self::Attribute => "attribute",
+            Self::Tag => "tag",
+            Self::Label => "label",
+            Self::Namespace => "namespace",
+            Self::Macro => "macro",
+            Self::Escape => "escape",
+            Self::Heading => "heading",
+            Self::Link => "link",
+            Self::Emphasis => "emphasis",
+        }
+    }
+
     /// Catégorie d'un nom de capture (`function.method`, `text.title`…) ; `None` si inconnu.
     fn from_capture(name: &str) -> Option<Self> {
         use Highlight as H;
@@ -252,10 +278,27 @@ impl Syntax {
         new_end: (usize, usize),
         new_text: &str,
     ) {
-        if new_text.len() > MAX_LEN {
-            self.tree = None;
-            return;
-        }
+        self.apply_edit(
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start,
+            old_end,
+            new_end,
+        );
+        self.reparse(new_text);
+    }
+
+    /// Reporte une édition sur l'arbre sans reparser : pour un lot, plusieurs `apply_edit` puis un `reparse`.
+    pub fn apply_edit(
+        &mut self,
+        start_byte: usize,
+        old_end_byte: usize,
+        new_end_byte: usize,
+        start: (usize, usize),
+        old_end: (usize, usize),
+        new_end: (usize, usize),
+    ) {
         let point = |(row, column)| Point { row, column };
         if let Some(tree) = &mut self.tree {
             tree.edit(&InputEdit {
@@ -267,12 +310,17 @@ impl Syntax {
                 new_end_position: point(new_end),
             });
         }
-        // Sans arbre précédent (texte redescendu sous 5 Mo) : analyse complète.
+    }
+
+    /// Reparse incrémental après `apply_edit` ; au-delà de 5 Mo, plus d'arbre (NF-03).
+    pub fn reparse(&mut self, new_text: &str) {
+        if new_text.len() > MAX_LEN {
+            self.tree = None;
+            return;
+        }
         self.tree = self.parser.parse(new_text, self.tree.as_ref());
     }
 
-    /// Plages colorées (octets) qui touchent `range` (octets), triées, sans chevauchement
-    /// (la capture la plus spécifique gagne). Les plages sont rognées à `range`.
     pub fn highlights(&self, text: &str, range: Range<usize>) -> Vec<(Range<usize>, Highlight)> {
         let range = range.start.min(text.len())..range.end.min(text.len());
         let Some(tree) = &self.tree else {
