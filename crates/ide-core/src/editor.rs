@@ -89,6 +89,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             }
             cmds
         }
+        Event::Paste(text) if state.palette.is_some() => {
+            palette::paste(state, &text);
+            vec![]
+        }
         Event::Paste(text) if state.focus == crate::Focus::Explorer => {
             explorer::paste(state, &text);
             vec![]

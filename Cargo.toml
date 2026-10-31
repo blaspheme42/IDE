@@ -32,6 +32,7 @@ tempfile = "3"
 ec4rs = "1.2"
 toml = "1"
 regex = "1"
+nucleo-matcher = "0.3"
 proptest = "1"
 arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
 ignore = "0.4"
