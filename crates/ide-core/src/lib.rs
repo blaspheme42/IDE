@@ -7,6 +7,7 @@ mod editor;
 mod explorer;
 mod history;
 mod lsp;
+mod palette;
 mod search;
 mod tabs;
 
@@ -18,6 +19,7 @@ pub use lsp::{
     PROBLEMS_HEIGHT, Position, Severity, default_servers, diagnostic_counts, problems,
     visible_completions,
 };
+pub use palette::{Palette, PaletteItem, PaletteKind, palette_items};
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
 
@@ -148,6 +150,10 @@ pub enum Event {
     DefinitionResult(Vec<Location>),
     /// État du serveur pour la barre de statut (« rust-analyzer ✓ », « clangd : arrêté »…), vide = aucun.
     LspStatus(String),
+    /// Fichiers du projet (chemins absolus, .gitignore respecté), réponse à `Command::ListFiles`.
+    FileList(Vec<PathBuf>),
+    /// Branche git courante (`None` : pas de dépôt, ou HEAD détachée → l'app envoie le commit court).
+    GitBranch(Option<String>),
     /// Configuration chargée au démarrage ; `errors` : problèmes à signaler sans bloquer (clé inconnue, TOML invalide…).
     ConfigLoaded {
         settings: Settings,
@@ -184,6 +190,11 @@ pub enum Command {
     },
     /// Vers la corbeille, jamais de suppression définitive.
     Trash(PathBuf),
+    /// Lister tous les fichiers du projet (palette Ctrl+P) → `Event::FileList`.
+    ListFiles {
+        root: PathBuf,
+        show_hidden: bool,
+    },
     /// Requêtes LSP sur le document `path` à la `version` courante (l'app aura déjà synchronisé ce texte).
     RequestCompletion {
         path: PathBuf,
@@ -263,6 +274,12 @@ pub struct State {
     pub search: Option<Search>,
     pub explorer: Explorer,
     pub settings: Settings,
+    /// Palette ouverte (Ctrl+P, Ctrl+Shift+P).
+    pub palette: Option<Palette>,
+    /// Fichiers du projet pour Ctrl+P (vide tant que la liste n'est pas arrivée).
+    pub project_files: Vec<PathBuf>,
+    /// Branche git courante, pour la barre de statut (F-70).
+    pub git_branch: Option<String>,
     /// Diagnostics LSP par fichier (F-42).
     pub diagnostics: std::collections::HashMap<PathBuf, Vec<Diagnostic>>,
     /// Liste de complétion ouverte (F-41).

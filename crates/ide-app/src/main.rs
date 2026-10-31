@@ -175,7 +175,8 @@ async fn run(
                     | Command::CreateDir(_)
                     | Command::Rename { .. }
                     | Command::Trash(_)
-                    | Command::Reload(_)) => workspace::spawn(cmd, tx.clone()),
+                    | Command::Reload(_)
+                    | Command::ListFiles { .. }) => workspace::spawn(cmd, tx.clone()),
                     cmd @ (Command::RequestCompletion { .. }
                     | Command::RequestHover { .. }
                     | Command::RequestDefinition { .. }) => lsp.request(cmd),

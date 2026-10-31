@@ -2,7 +2,7 @@
 
 use crate::{
     Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, TAB_BAR_HEIGHT,
-    editor_size, explorer, lsp, search, tabs,
+    editor_size, explorer, lsp, palette, search, tabs,
 };
 
 /// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace, colonne de diagnostics.
@@ -36,6 +36,14 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         }
         Event::FileChanged { path, text } => {
             tabs::file_changed(state, path, text);
+            vec![]
+        }
+        Event::FileList(files) => {
+            state.project_files = files;
+            vec![]
+        }
+        Event::GitBranch(branch) => {
+            state.git_branch = branch;
             vec![]
         }
         Event::Diagnostics { path, items } => {
@@ -234,6 +242,10 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     if !(ctrl('w') || ctrl('W')) && state.close_armed {
         state.close_armed = false;
         state.status.clear();
+    }
+    // Palette ouverte : modale, elle passe avant tout le reste.
+    if let Some(cmds) = palette::key(state, k) {
+        return cmds;
     }
     if let Some(cmds) = explorer::key(state, k) {
         return cmds;

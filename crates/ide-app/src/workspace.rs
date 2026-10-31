@@ -56,7 +56,8 @@ fn execute(cmd: Command) -> Vec<Event> {
         | Command::RequestPaste
         | Command::RequestCompletion { .. }
         | Command::RequestHover { .. }
-        | Command::RequestDefinition { .. } => {
+        | Command::RequestDefinition { .. }
+        | Command::ListFiles { .. } => {
             vec![]
         }
     }
