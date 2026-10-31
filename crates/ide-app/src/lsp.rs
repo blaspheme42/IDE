@@ -67,6 +67,14 @@ pub struct LspManager {
     started_rx: mpsc::UnboundedReceiver<(String, Option<Client>)>,
 }
 
+/// `languageId` du protocole : diffère de notre nom de langage pour quelques-uns.
+fn language_id(lang: &str) -> &str {
+    match lang {
+        "tsx" => "typescriptreact",
+        other => other,
+    }
+}
+
 fn lang_of(path: &Path) -> Option<String> {
     Language::from_path(path).map(|l| l.name().to_lowercase())
 }
@@ -180,6 +188,13 @@ impl LspManager {
             .map(|(l, _)| l.clone())
             .collect();
         for lang in dead {
+            // Ses diagnostics deviendraient faux au fil de l'édition : on les efface (sans bloquer : try_send).
+            for (path, _) in self.tracked.iter().filter(|(_, t)| t.lang == lang) {
+                let _ = self.tx.try_send(Event::Diagnostics {
+                    path: path.clone(),
+                    items: vec![],
+                });
+            }
             self.tracked.retain(|_, t| t.lang != lang);
             let n = self.restarts.entry(lang.clone()).or_default();
             *n += 1;
@@ -215,7 +230,7 @@ impl LspManager {
                     lang,
                     version,
                     text,
-                } => c.did_open(path, lang, *version, text),
+                } => c.did_open(path, language_id(lang), *version, text),
                 Sync::Change {
                     path,
                     version,

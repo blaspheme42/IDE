@@ -11,6 +11,9 @@ pub(crate) fn frame(msg: &Value) -> Vec<u8> {
     out
 }
 
+/// Plafond d'un message serveur (une réponse de complétion énorme fait quelques Mo).
+const MAX_MESSAGE: usize = 64 << 20;
+
 /// Prochain message JSON valide ; `None` en fin de flux (ou message tronqué par la fin).
 /// En-têtes inconnus (`Content-Type`…) ignorés ; JSON invalide journalisé puis sauté.
 pub(crate) async fn read_message<R: AsyncBufRead + Unpin>(r: &mut R) -> Option<Value> {
@@ -37,7 +40,13 @@ pub(crate) async fn read_message<R: AsyncBufRead + Unpin>(r: &mut R) -> Option<V
                 len = v.trim().parse().ok();
             }
         }
-        let mut body = vec![0; len.unwrap_or(0)];
+        let len = len.unwrap_or(0);
+        // Taille annoncée absurde : un serveur bogué ne doit pas faire tomber l'IDE sur une allocation.
+        if len > MAX_MESSAGE {
+            tracing::warn!("LSP : message de {len} octets refusé, flux abandonné");
+            return None;
+        }
+        let mut body = vec![0; len];
         if let Err(e) = r.read_exact(&mut body).await {
             tracing::warn!("LSP : message tronqué ({e})");
             return None;
