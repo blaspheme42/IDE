@@ -116,6 +116,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             if tabs::open(state, path, |p| Document::from_text(Some(p), &text)) {
                 state.status = format!("Ouvert : {}", state.doc.display_name());
             }
+            lsp::apply_pending_jump(state);
             vec![]
         }
         Event::IndentDetected { path, indent } => {
