@@ -51,6 +51,8 @@ pub struct Completion {
     pub anchor: usize,
     /// Document visé : la liste se ferme quand l'onglet actif change.
     pub path: Option<PathBuf>,
+    /// Liste tronquée par le serveur : chaque caractère identifiant tapé la redemande.
+    pub incomplete: bool,
 }
 
 /// Infobulle de survol ouverte.
@@ -341,14 +343,18 @@ pub(crate) fn after_update(state: &mut State, version_before: u64) -> Vec<Comman
             state.completion = None;
         }
     }
-    // Liste ouverte : la frappe filtre localement, sans nouvelle requête.
-    if !(typed && changed && editor && state.completion.is_none() && cursor > 0) {
+    // Liste ouverte : la frappe filtre localement ; si elle est incomplète, on la redemande aussi.
+    if !(typed && changed && editor && cursor > 0) {
         return vec![];
     }
     let rope = state.doc.rope();
     let c = rope.char(cursor - 1);
     let colons = c == ':' && cursor > 1 && rope.char(cursor - 2) == ':';
-    if is_ident(c) || c == '.' || colons {
+    let ask = match &state.completion {
+        None => is_ident(c) || c == '.' || colons,
+        Some(open) => open.incomplete && is_ident(c),
+    };
+    if ask {
         request_completion(state).into_iter().collect()
     } else {
         vec![]
@@ -360,10 +366,12 @@ pub(crate) fn completion_result(
     path: PathBuf,
     version: u64,
     items: Vec<CompletionItem>,
+    incomplete: bool,
 ) {
     let doc = &state.doc;
     let searching = state.search.is_some();
-    let Some(anchor) = state.lsp_pending.completion_anchor.take().filter(|&a| {
+    // Réponse périmée : ignorée sans consommer l'ancre, la requête suivante est peut-être en vol.
+    let Some(anchor) = state.lsp_pending.completion_anchor.filter(|&a| {
         !searching
             && doc.path.as_ref() == Some(&path)
             && doc.version() == version
@@ -371,14 +379,27 @@ pub(crate) fn completion_result(
     }) else {
         return;
     };
+    state.lsp_pending.completion_anchor = None;
+    // Liste déjà ouverte (relance d'une liste incomplète) : la sélection suit le même label.
+    let label = state.completion.as_ref().and_then(|c| {
+        let v = visible_completions(state);
+        v.get(c.selected).map(|i| i.label.clone())
+    });
     state.completion = (!items.is_empty()).then_some(Completion {
         items,
         selected: 0,
         anchor,
         path: Some(path),
+        incomplete,
     });
-    if visible_completions(state).is_empty() {
+    let visible = visible_completions(state);
+    if visible.is_empty() {
         state.completion = None;
+        return;
+    }
+    let selected = label.and_then(|l| visible.iter().position(|i| i.label == l));
+    if let (Some(c), Some(i)) = (&mut state.completion, selected) {
+        c.selected = i;
     }
 }
 
@@ -478,6 +499,9 @@ mod tests {
         }
     }
     fn reponse(s: &mut State, version: u64, labels: &[&str]) {
+        reponse_de(s, version, labels, false);
+    }
+    fn reponse_de(s: &mut State, version: u64, labels: &[&str], incomplete: bool) {
         let path = s.doc.path.clone().unwrap_or_default();
         update(
             s,
@@ -485,6 +509,7 @@ mod tests {
                 path,
                 version,
                 items: labels.iter().map(|l| item(l)).collect(),
+                incomplete,
             },
         );
     }
@@ -581,6 +606,43 @@ mod tests {
         update(&mut s, k(Key::Home));
         reponse(&mut s, v, &["print"]);
         assert!(s.completion.is_none());
+    }
+
+    #[test]
+    fn liste_incomplete_redemandee_a_la_frappe() {
+        let mut s = ouvert("/p/a.rs", "");
+        tape(&mut s, "p");
+        let v = s.doc.version();
+        reponse_de(&mut s, v, &["print", "push", "pop"], true);
+        // Filtrage local immédiat et nouvelle requête.
+        let cmds = tape(&mut s, "u");
+        assert!(
+            matches!(&cmds[..], [Command::RequestCompletion { pos: p, .. }] if *p == pos(0, 2))
+        );
+        assert_eq!(visibles(&s), ["push"]);
+        // Réponse périmée (version d'avant « u ») : ignorée, la liste locale reste.
+        reponse_de(&mut s, v, &["zzz"], true);
+        assert_eq!(visibles(&s), ["push"]);
+        // Remplacement : ancre gardée, sélection suivie par label.
+        let v = s.doc.version();
+        reponse_de(&mut s, v, &["pub", "pull", "push"], false);
+        let c = s
+            .completion
+            .as_ref()
+            .map(|c| (c.anchor, c.selected, c.incomplete));
+        assert_eq!(c, Some((0, 2, false)));
+        assert_eq!(visibles(&s), ["pub", "pull", "push"]);
+        // Devenue complète : plus de requête.
+        assert!(tape(&mut s, "s").is_empty());
+        assert_eq!(visibles(&s), ["push"]);
+    }
+
+    #[test]
+    fn liste_complete_pas_de_requete() {
+        let mut s = liste("");
+        assert_eq!(s.completion.as_ref().map(|c| c.incomplete), Some(false));
+        assert!(tape(&mut s, "i").is_empty());
+        assert_eq!(visibles(&s), ["print", "println!", "sprintf"]);
     }
 
     #[test]
@@ -819,6 +881,7 @@ mod tests {
                 path,
                 version: v,
                 items: vec![it],
+                incomplete: false,
             },
         );
         update(&mut s, touche(Key::Enter, false, false));

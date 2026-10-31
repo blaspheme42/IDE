@@ -122,7 +122,8 @@ async fn completion_liste_tableau_snippets() {
         req["params"]["position"],
         json!({ "line": 1, "character": 2 })
     );
-    let items = res.unwrap();
+    let (items, incomplete) = res.unwrap();
+    assert!(!incomplete);
     let got: Vec<_> = items
         .iter()
         .map(|i| (i.insert_text.as_str(), i.kind.as_deref()))
@@ -142,12 +143,27 @@ async fn completion_liste_tableau_snippets() {
         c.completion(path(), P),
         s.answer("textDocument/completion", arr)
     );
-    assert_eq!(res.unwrap()[0].insert_text, "k");
+    let (items, incomplete) = res.unwrap();
+    assert_eq!((items[0].insert_text.as_str(), incomplete), ("k", false));
     let (res, _) = tokio::join!(
         c.completion(path(), P),
         s.answer("textDocument/completion", Value::Null)
     );
-    assert!(res.unwrap().is_empty());
+    assert_eq!(res.unwrap(), (vec![], false));
+    // `isIncomplete` vrai, puis absent d'une `CompletionList`.
+    let (res, _) = tokio::join!(
+        c.completion(path(), P),
+        s.answer(
+            "textDocument/completion",
+            json!({ "isIncomplete": true, "items": [{ "label": "x" }] })
+        )
+    );
+    assert!(res.unwrap().1);
+    let (res, _) = tokio::join!(
+        c.completion(path(), P),
+        s.answer("textDocument/completion", json!({ "items": [] }))
+    );
+    assert!(!res.unwrap().1);
 }
 
 #[tokio::test]
@@ -350,7 +366,7 @@ async fn rust_analyzer_reel() {
     };
     let mut items = vec![];
     while items.is_empty() && t0.elapsed() < Duration::from_secs(30) {
-        items = c.completion(&main, pos).await.unwrap_or_default();
+        items = c.completion(&main, pos).await.unwrap_or_default().0;
     }
     eprintln!("{} complétions en {:?}", items.len(), t0.elapsed());
     assert!(!items.is_empty());

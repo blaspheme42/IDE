@@ -949,6 +949,7 @@ mod tests {
             selected,
             anchor,
             path: None,
+            incomplete: false,
         });
         s
     }

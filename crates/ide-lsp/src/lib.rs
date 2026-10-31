@@ -214,7 +214,7 @@ impl Client {
         &self,
         path: &Path,
         pos: ide_core::Position,
-    ) -> Result<Vec<ide_core::CompletionItem>, String> {
+    ) -> Result<(Vec<ide_core::CompletionItem>, bool), String> {
         let v = self.request("textDocument/completion", pos_params(path, pos));
         Ok(convert::completion(&v.await?))
     }

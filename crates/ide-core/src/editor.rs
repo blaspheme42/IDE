@@ -55,8 +55,9 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             path,
             version,
             items,
+            incomplete,
         } => {
-            lsp::completion_result(state, path, version, items);
+            lsp::completion_result(state, path, version, items, incomplete);
             vec![]
         }
         Event::HoverResult { path, text } => {
