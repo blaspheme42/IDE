@@ -76,13 +76,28 @@ async fn run(
     };
 
     let (tx, mut rx) = mpsc::channel::<Event>(256);
-    // Racine d'abord : l'arbre se charge pendant la lecture du fichier.
+    // Configuration d'abord (cachés, largeur du panneau, indentation), puis la racine :
+    // l'arbre se charge pendant la lecture du fichier.
+    let r = root.clone();
+    let (settings, errors) =
+        tokio::task::spawn_blocking(move || ide_workspace::load_config(&r)).await?;
+    for e in &errors {
+        tracing::warn!("configuration : {e}");
+    }
+    workspace::set_default_indent(settings.indent);
+    // Appliquée tout de suite : le premier rendu a déjà le bon thème (pas de flash sombre).
+    let config = Event::ConfigLoaded { settings, errors };
+    ide_core::update(&mut state, config.clone());
     tx.send(Event::OpenRoot(root)).await?;
     // Fichier lu avant de lancer le lecteur : FileOpened passe avant toute touche.
     if let Some(path) = file {
         for ev in tokio::task::spawn_blocking(move || workspace::open_file(path)).await? {
             tx.send(ev).await?;
         }
+    }
+    // Erreurs de config renvoyées en dernier : « Ouvert : … » ne doit pas les masquer.
+    if matches!(&config, Event::ConfigLoaded { errors, .. } if !errors.is_empty()) {
+        tx.send(config).await?;
     }
     let mut reader = tokio::spawn(read_terminal_events(tx.clone()));
 

@@ -74,12 +74,25 @@ fn failure(cmd: Command, error: String) -> Event {
     }
 }
 
+/// Indentation de config.toml, utilisée quand aucun .editorconfig ne fixe celle d'un fichier.
+static DEFAULT_INDENT: std::sync::OnceLock<ide_workspace::IndentStyle> = std::sync::OnceLock::new();
+
+/// À appeler une fois au démarrage, après lecture de la configuration.
+pub fn set_default_indent(indent: Indent) {
+    let _ = DEFAULT_INDENT.set(ide_workspace::IndentStyle {
+        use_tabs: indent.use_tabs,
+        width: indent.width,
+        tab_width: indent.tab_width,
+    });
+}
+
 /// Lit `path` et son style `.editorconfig` : FileOpened (ou OpenFailed) puis IndentDetected,
 /// qui doit suivre l'ouverture puisque celle-ci remet le document à zéro.
 pub fn open_file(path: PathBuf) -> Vec<Event> {
     // Chemin canonique : un même fichier atteint par un lien symbolique n'ouvre pas un second onglet.
     let path = std::fs::canonicalize(&path).unwrap_or(path);
-    let style = ide_workspace::indent_style(&path);
+    let style =
+        ide_workspace::indent_style_or(&path, DEFAULT_INDENT.get().copied().unwrap_or_default());
     let opened = match files::read_file(&path) {
         Ok(text) => Event::FileOpened {
             path: path.clone(),
