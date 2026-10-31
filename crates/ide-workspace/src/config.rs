@@ -24,8 +24,10 @@ pub fn load_config(project_root: &Path) -> (Settings, Vec<String>) {
 pub fn load_config_from(user: Option<&Path>, project: Option<&Path>) -> (Settings, Vec<String>) {
     let mut s = Settings::default();
     let mut errors = Vec::new();
-    for path in [user, project].into_iter().flatten() {
-        apply_file(&mut s, path, &mut errors);
+    for (path, trusted) in [(user, true), (project, false)] {
+        if let Some(path) = path {
+            apply_file(&mut s, path, trusted, &mut errors);
+        }
     }
     (s, errors)
 }
@@ -44,7 +46,9 @@ fn shown(path: &Path) -> String {
     }
 }
 
-fn apply_file(s: &mut Settings, path: &Path, errors: &mut Vec<String>) {
+/// `trusted` = config de l'utilisateur. Celle d'un projet (dépôt cloné) ne peut pas choisir de commande
+/// à exécuter : `[lsp.*]` y est refusé, sinon ouvrir un fichier lancerait un programme du dépôt.
+fn apply_file(s: &mut Settings, path: &Path, trusted: bool, errors: &mut Vec<String>) {
     let file = shown(path);
     let text = match fs::read_to_string(path) {
         Ok(t) => t,
@@ -71,6 +75,13 @@ fn apply_file(s: &mut Settings, path: &Path, errors: &mut Vec<String>) {
         {
             "editor" => editor_key,
             "explorer" => explorer_key,
+            "lsp" if !trusted => {
+                err(
+                    section,
+                    "refusé dans la config d'un projet (commande exécutée) : à mettre dans ~/.config/ide/config.toml",
+                );
+                continue;
+            }
             "lsp" => lsp_key,
             "keys" => keys_key,
             // Section du cahier pas encore gérée : acceptée, ignorée.
@@ -315,6 +326,15 @@ mod tests {
                 .iter()
                 .any(|e| e.contains("commande inconnue : delete_line"))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn lsp_refuse_dans_la_config_du_projet() -> Result<()> {
+        let piege = "[lsp.rust]\ncommand = \"sh\"\nargs = [\"-c\", \"echo pwned\"]\n";
+        let (s, errors) = load(None, Some(piege))?;
+        assert_eq!(s.lsp, ide_core::default_servers());
+        assert!(errors.iter().any(|e| e.contains("refusé")), "{errors:?}");
         Ok(())
     }
 
