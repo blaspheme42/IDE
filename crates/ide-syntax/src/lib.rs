@@ -23,6 +23,7 @@ pub enum Language {
     Json,
     Toml,
     Markdown,
+    Php,
 }
 
 impl Language {
@@ -44,6 +45,7 @@ impl Language {
             "json" => Self::Json,
             "toml" => Self::Toml,
             "md" | "markdown" => Self::Markdown,
+            "php" | "phtml" => Self::Php,
             _ => return None,
         })
     }
@@ -62,6 +64,7 @@ impl Language {
             Self::Json => "JSON",
             Self::Toml => "TOML",
             Self::Markdown => "Markdown",
+            Self::Php => "PHP",
         }
     }
 
@@ -122,6 +125,11 @@ impl Language {
             Self::Markdown => (
                 tree_sitter_md::LANGUAGE.into(),
                 tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.into(),
+            ),
+            // shortcut: le HTML hors des balises <?php ?> n'est pas coloré (pas d'injection) ; à ajouter avec les injections.
+            Self::Php => (
+                tree_sitter_php::LANGUAGE_PHP.into(),
+                tree_sitter_php::HIGHLIGHTS_QUERY.into(),
             ),
         }
     }

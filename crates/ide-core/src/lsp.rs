@@ -80,7 +80,7 @@ pub struct LspServer {
     pub args: Vec<String>,
 }
 
-/// Serveurs par défaut (F-40) : rust-analyzer, pyright, clangd.
+/// Serveurs par défaut (F-40) ; un serveur absent est simplement signalé dans la barre de statut (NF-05).
 pub fn default_servers() -> Vec<LspServer> {
     let s = |language: &str, command: &str, args: &[&str]| LspServer {
         language: language.into(),
@@ -91,6 +91,13 @@ pub fn default_servers() -> Vec<LspServer> {
         s("rust", "rust-analyzer", &[]),
         s("python", "pyright-langserver", &["--stdio"]),
         s("c", "clangd", &[]),
+        s("html", "vscode-html-language-server", &["--stdio"]),
+        s("css", "vscode-css-language-server", &["--stdio"]),
+        s("json", "vscode-json-language-server", &["--stdio"]),
+        s("php", "intelephense", &["--stdio"]),
+        s("javascript", "typescript-language-server", &["--stdio"]),
+        s("typescript", "typescript-language-server", &["--stdio"]),
+        s("tsx", "typescript-language-server", &["--stdio"]),
     ]
 }
 
