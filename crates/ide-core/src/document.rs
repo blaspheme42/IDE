@@ -38,7 +38,7 @@ impl Default for Indent {
 
 impl Indent {
     /// Un niveau d'indentation.
-    fn unit(self) -> String {
+    pub(crate) fn unit(self) -> String {
         if self.use_tabs {
             "\t".into()
         } else {
