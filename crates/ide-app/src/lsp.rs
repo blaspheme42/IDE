@@ -65,12 +65,29 @@ pub struct LspManager {
     /// Résultats des démarrages en fond, lus au début de `sync`.
     started_tx: mpsc::UnboundedSender<(String, Option<Client>)>,
     started_rx: mpsc::UnboundedReceiver<(String, Option<Client>)>,
+    /// Serveur d'appoint (Emmet) : ni statut ni diagnostics, complétion seulement.
+    quiet: bool,
+    companion: Option<Box<LspManager>>,
+}
+
+/// Serveurs d'appoint, pour la complétion seulement : leurs propositions s'ajoutent à celles du serveur principal.
+// shortcut: un processus Emmet par langage (html, css, php), à partager si la mémoire compte.
+fn companions() -> Vec<LspServer> {
+    ["html", "css", "php"]
+        .map(|l| LspServer {
+            language: l.into(),
+            command: "emmet-language-server".into(),
+            args: vec!["--stdio".into()],
+        })
+        .into()
 }
 
 /// `languageId` du protocole : diffère de notre nom de langage pour quelques-uns.
-fn language_id(lang: &str) -> &str {
+/// Emmet ne connaît pas PHP : on lui présente le fichier comme du HTML.
+fn language_id(lang: &str, emmet: bool) -> &str {
     match lang {
         "tsx" => "typescriptreact",
+        "php" if emmet => "html",
         other => other,
     }
 }
@@ -167,6 +184,14 @@ fn or_empty<T: Default>(what: &str, r: Result<T, String>) -> T {
 
 impl LspManager {
     pub fn new(tx: mpsc::Sender<Event>, root: PathBuf, servers: Vec<LspServer>) -> Self {
+        let companion = Self::build(tx.clone(), root.clone(), companions(), true);
+        Self {
+            companion: Some(Box::new(companion)),
+            ..Self::build(tx, root, servers, false)
+        }
+    }
+
+    fn build(tx: mpsc::Sender<Event>, root: PathBuf, servers: Vec<LspServer>, quiet: bool) -> Self {
         let (started_tx, started_rx) = mpsc::unbounded_channel();
         Self {
             tx,
@@ -177,6 +202,8 @@ impl LspManager {
             tracked: HashMap::new(),
             started_tx,
             started_rx,
+            quiet,
+            companion: None,
         }
     }
 
@@ -190,6 +217,9 @@ impl LspManager {
             && c.is_alive()
         {
             c.did_save(path);
+        }
+        if let Some(c) = &mut self.companion {
+            c.saved_while_dirty(path);
         }
     }
 
@@ -207,7 +237,8 @@ impl LspManager {
             .collect();
         for lang in dead {
             // Ses diagnostics deviendraient faux au fil de l'édition : on les efface (sans bloquer : try_send).
-            for (path, _) in self.tracked.iter().filter(|(_, t)| t.lang == lang) {
+            let mine = |t: &Tracked| t.lang == lang && !self.quiet;
+            for (path, _) in self.tracked.iter().filter(|(_, t)| mine(t)) {
                 let _ = self.tx.try_send(Event::Diagnostics {
                     path: path.clone(),
                     items: vec![],
@@ -248,7 +279,7 @@ impl LspManager {
                     lang,
                     version,
                     text,
-                } => c.did_open(path, language_id(lang), *version, text),
+                } => c.did_open(path, language_id(lang, self.quiet), *version, text),
                 Sync::Change {
                     path,
                     version,
@@ -258,6 +289,9 @@ impl LspManager {
                 Sync::Save { path, .. } => c.did_save(path),
                 Sync::Close { path, .. } => c.did_close(path),
             }
+        }
+        if let Some(c) = &mut self.companion {
+            c.sync(state);
         }
     }
 
@@ -273,14 +307,20 @@ impl LspManager {
             self.root.clone(),
         );
         let (lang, tx, started) = (lang.to_string(), self.tx.clone(), self.started_tx.clone());
+        let quiet = self.quiet;
+        let status = move |tx: mpsc::Sender<Event>, text: String| async move {
+            if !quiet {
+                let _ = tx.send(Event::LspStatus(text)).await;
+            }
+        };
         tokio::spawn(async move {
-            let _ = tx.send(Event::LspStatus(format!("{cmd}…"))).await;
+            status(tx.clone(), format!("{cmd}…")).await;
             match Client::start(&cmd, &args, &root).await {
                 Ok((client, notifs)) => {
                     // Client remis avant le statut : le `sync` réveillé par le statut ouvre les documents.
                     let _ = started.send((lang, Some(client)));
-                    let _ = tx.send(Event::LspStatus(format!("{cmd} ✓"))).await;
-                    forward(cmd, notifs, tx).await;
+                    status(tx.clone(), format!("{cmd} ✓")).await;
+                    forward(cmd, notifs, tx, quiet).await;
                 }
                 Err(e) => {
                     tracing::warn!("{e}");
@@ -290,7 +330,7 @@ impl LspManager {
                     } else {
                         "échec du démarrage"
                     };
-                    let _ = tx.send(Event::LspStatus(format!("{cmd} : {why}"))).await;
+                    status(tx, format!("{cmd} : {why}")).await;
                 }
             }
         });
@@ -313,14 +353,24 @@ impl LspManager {
             _ => return,
         };
         let client = self.client(path);
+        let extra = self.companion.as_ref().and_then(|c| c.client(path));
         let tx = self.tx.clone();
         tokio::spawn(async move {
             let ev = match cmd {
                 Command::RequestCompletion { path, version, pos } => {
-                    let (items, incomplete) = match &client {
-                        Some(c) => or_empty("completion", c.completion(&path, pos).await),
-                        None => (Vec::new(), false),
+                    let ask = |c: Option<Client>| {
+                        let path = path.clone();
+                        async move {
+                            match c {
+                                Some(c) => or_empty("completion", c.completion(&path, pos).await),
+                                None => (Vec::new(), false),
+                            }
+                        }
                     };
+                    // Emmet d'abord : une abréviation valide n'y donne qu'une ou deux propositions.
+                    let ((mut items, a), (main, b)) = tokio::join!(ask(extra), ask(client));
+                    items.extend(main);
+                    let incomplete = a || b;
                     Event::CompletionResult {
                         path,
                         version,
@@ -349,10 +399,15 @@ impl LspManager {
 
     /// À la sortie : `shutdown` de tous les serveurs en parallèle, 1 s au plus en tout.
     pub async fn shutdown(self) {
-        let all = self.clients.into_values().filter_map(|s| match s {
-            Server::Ready(c) => Some(async move { c.shutdown().await }),
-            _ => None,
-        });
+        let extra = self.companion.map(|c| c.clients).unwrap_or_default();
+        let all = self
+            .clients
+            .into_values()
+            .chain(extra.into_values())
+            .filter_map(|s| match s {
+                Server::Ready(c) => Some(async move { c.shutdown().await }),
+                _ => None,
+            });
         let all = futures::future::join_all(all);
         if tokio::time::timeout(Duration::from_secs(1), all)
             .await
@@ -368,9 +423,16 @@ async fn forward(
     name: String,
     mut notifs: mpsc::UnboundedReceiver<Notification>,
     tx: mpsc::Sender<Event>,
+    quiet: bool,
 ) {
     while let Some(n) = notifs.recv().await {
         let ev = match n {
+            // Serveur d'appoint : ses diagnostics écraseraient ceux du serveur principal.
+            Notification::Diagnostics { .. } if quiet => continue,
+            Notification::Exited(msg) if quiet => {
+                tracing::warn!("{msg}");
+                continue;
+            }
             Notification::Diagnostics { path, items } => Event::Diagnostics { path, items },
             Notification::Message(m) => {
                 tracing::info!("{name} : {m}");

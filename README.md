@@ -26,6 +26,7 @@ Serveurs de langage (facultatifs, démarrés automatiquement s'ils sont install�
 | HTML, CSS, JSON | vscode-*-language-server | `npm install -g vscode-langservers-extracted` |
 | PHP | intelephense | `npm install -g intelephense` |
 | JavaScript, TypeScript | typescript-language-server | `npm install -g typescript typescript-language-server` |
+| Emmet (HTML, CSS, PHP) | emmet-language-server, en plus du serveur du langage | `npm install -g @olrtg/emmet-language-server` |
 
 ## Commandes
 
@@ -79,7 +80,7 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 - Souris : clic pour placer le curseur, glisser ou `Shift+clic` pour sélectionner, molette pour défiler. La sélection native du terminal reste possible avec `Shift`+glisser (selon le terminal).
 - `Ctrl+Z` / `Ctrl+Y` (ou `Ctrl+Shift+Z`) : annuler / rétablir, sans limite.
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` : copier / couper / coller (sans sélection : la ligne entière). Presse-papiers système, ou interne si aucun n'est disponible (SSH).
-- HTML et PHP : `!` puis `Tab` insère une page HTML5, `!!!` puis `Tab` le doctype.
+- Emmet (HTML, CSS, PHP, si emmet-language-server est installé) : tapez une abréviation (`ul>li*3`, `div.carte`, `m10` en CSS), elle apparaît dans la liste de complétion, `Entrée` la développe. Sans lui, `!` puis `Tab` insère quand même une page HTML5, `!!!` puis `Tab` le doctype.
 - `Tab` / `Shift+Tab` : indenter / désindenter (la sélection entière si elle couvre plusieurs lignes) ; `Entrée` garde l'indentation. Tabulations ou espaces et largeur selon `.editorconfig` (4 espaces par défaut).
 - `Ctrl+F` / `Ctrl+H` : rechercher / remplacer. Dans la barre : `Entrée` ou `F3` suivant, `Shift+F3` précédent, `Tab` change de champ, `Entrée` dans « Remplacer » remplace l'occurrence courante, `Alt+Entrée` remplace tout, `Alt+R` regex (`$1`, `${nom}` dans le remplacement), `Alt+C` casse, `Échap` ferme.
 - Explorateur : `Ctrl+B` l'affiche ou le masque, `Ctrl+E` y place le focus ; flèches pour naviguer, `Entrée` ouvre, `n` / `Shift+N` nouveau fichier / dossier, `F2` ou `r` renommer, `m` déplacer, `Suppr` corbeille (confirmation), `.` fichiers cachés, `<` / `>` largeur.

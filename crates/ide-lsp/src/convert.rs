@@ -96,10 +96,21 @@ fn kind_label(kind: u64) -> Option<&'static str> {
 }
 
 /// Retire les marqueurs de snippet : `$0`, `$1`, `${1}` disparaissent, `${1:texte}` → `texte`.
+/// Rend aussi la position (en caractères) du premier arrêt : le plus petit numéro non nul, sinon `$0`.
 // shortcut: choix `${1|a,b|}` et variables `$TM_…` laissés tels quels, rares en complétion.
-pub(crate) fn strip_snippet(s: &str) -> String {
+pub(crate) fn strip_snippet(s: &str) -> (String, Option<usize>) {
     let mut out = String::with_capacity(s.len());
     let mut open = 0usize;
+    // (numéro, position) ; `$0` compte comme le dernier arrêt.
+    let mut first: Option<(u32, usize)> = None;
+    let mut stop = |digits: &str, at: usize| {
+        let n = digits
+            .parse::<u32>()
+            .map_or(u32::MAX, |n| if n == 0 { u32::MAX } else { n });
+        if first.is_none_or(|(m, _)| n < m) {
+            first = Some((n, at));
+        }
+    };
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
@@ -107,11 +118,19 @@ pub(crate) fn strip_snippet(s: &str) -> String {
                 out.extend(chars.next());
             }
             '$' if chars.peek().is_some_and(char::is_ascii_digit) => {
-                while chars.next_if(char::is_ascii_digit).is_some() {}
+                let mut digits = String::new();
+                while let Some(d) = chars.next_if(char::is_ascii_digit) {
+                    digits.push(d);
+                }
+                stop(&digits, out.chars().count());
             }
             '$' if chars.peek() == Some(&'{') => {
                 chars.next();
-                while chars.next_if(char::is_ascii_digit).is_some() {}
+                let mut digits = String::new();
+                while let Some(d) = chars.next_if(char::is_ascii_digit) {
+                    digits.push(d);
+                }
+                stop(&digits, out.chars().count());
                 if chars.next_if_eq(&':').is_some() {
                     open += 1;
                 } else {
@@ -122,7 +141,7 @@ pub(crate) fn strip_snippet(s: &str) -> String {
             c => out.push(c),
         }
     }
-    out
+    (out, first.map(|(_, at)| at))
 }
 
 /// Réponse de `textDocument/completion` : `CompletionList`, tableau ou `null`.
@@ -138,10 +157,10 @@ pub(crate) fn completion(v: &Value) -> (Vec<CompletionItem>, bool) {
                 .as_str()
                 .or_else(|| it["textEdit"]["newText"].as_str())
                 .unwrap_or(&label);
-            let insert_text = if it["insertTextFormat"].as_u64() == Some(2) {
+            let (insert_text, cursor) = if it["insertTextFormat"].as_u64() == Some(2) {
                 strip_snippet(text)
             } else {
-                text.to_string()
+                (text.to_string(), None)
             };
             // `TextEdit` (range) ou `InsertReplaceEdit` (insert).
             let edit = &it["textEdit"];
@@ -162,6 +181,7 @@ pub(crate) fn completion(v: &Value) -> (Vec<CompletionItem>, bool) {
                 kind: it["kind"].as_u64().and_then(kind_label).map(Into::into),
                 detail: it["detail"].as_str().map(Into::into),
                 insert_text,
+                cursor,
                 label,
             })
         })
@@ -222,10 +242,17 @@ mod tests {
 
     #[test]
     fn snippets() {
-        assert_eq!(strip_snippet("foo($1)$0"), "foo()");
-        assert_eq!(strip_snippet("foo(${1:a}, ${2:b})"), "foo(a, b)");
-        assert_eq!(strip_snippet("if ${1:x == ${2:y}} {$0}"), "if x == y {}");
-        assert_eq!(strip_snippet(r"a\$b${3}"), "a$b");
+        let s = |t| strip_snippet(t);
+        assert_eq!(s("foo($1)$0"), ("foo()".into(), Some(4)));
+        assert_eq!(s("foo(${1:a}, ${2:b})"), ("foo(a, b)".into(), Some(4)));
+        assert_eq!(
+            s("if ${1:x == ${2:y}} {$0}"),
+            ("if x == y {}".into(), Some(3))
+        );
+        assert_eq!(s(r"a\$b${3}"), ("a$b".into(), Some(3)));
+        assert_eq!(s("<li>$0</li>"), ("<li></li>".into(), Some(4)));
+        assert_eq!(s("<é>${2}x$1"), ("<é>x".into(), Some(4)));
+        assert_eq!(s("aa"), ("aa".into(), None));
     }
 
     #[test]

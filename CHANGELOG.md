@@ -7,6 +7,8 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 ### Ajouté
 - PHP : coloration (`.php`, `.phtml`), y compris le HTML hors des balises `<?php ?>`, et complétion avec intelephense (PHP et HTML).
 - Abréviations Emmet `!` (page HTML5) et `!!!` (doctype), développées par `Tab` dans les fichiers HTML et PHP.
+- Emmet complet dans la liste de complétion (HTML, CSS, PHP) avec emmet-language-server, lancé en plus du serveur du langage.
+- Complétion : curseur placé au premier arrêt du snippet (`class="|"`, `<li>|</li>`, `foo(|)`), blocs multilignes alignés sur la ligne courante.
 - Serveurs de langage par défaut pour HTML, CSS, JSON (vscode-langservers-extracted), PHP (intelephense), JavaScript et TypeScript (typescript-language-server).
 
 ## [1.0.0] — 2026-10-31 · J5 Version 1.0
