@@ -970,6 +970,7 @@ mod tests {
             kind: Some(kind.into()),
             detail: detail.map(Into::into),
             insert_text: label.into(),
+            cursor: None,
             replace_start: None,
         }
     }

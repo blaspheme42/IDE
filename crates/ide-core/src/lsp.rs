@@ -36,6 +36,8 @@ pub struct CompletionItem {
     pub detail: Option<String>,
     /// Texte inséré à la place du mot en cours (sans snippets : `$1`… déjà retirés par l'app).
     pub insert_text: String,
+    /// Curseur après insertion, en caractères depuis le début de `insert_text` (premier arrêt du snippet) ; sinon à la fin.
+    pub cursor: Option<usize>,
     /// Début de la plage à remplacer donné par le serveur (`textEdit`), sinon le début du mot tapé.
     pub replace_start: Option<Position>,
 }
@@ -205,11 +207,11 @@ fn accept(state: &mut State) {
     let selected = state.completion.as_ref().map_or(0, |c| c.selected);
     let text = visible_completions(state)
         .get(selected)
-        .map(|i| (i.insert_text.clone(), i.replace_start));
+        .map(|i| (i.insert_text.clone(), i.cursor, i.replace_start));
     let Some(c) = state.completion.take() else {
         return;
     };
-    if let Some((text, start)) = text {
+    if let Some((text, caret, start)) = text {
         let cursor = state.doc.cursor();
         // Plage du serveur si elle finit sur la ligne avant le curseur (ex. `'st` → `'static`), sinon le mot tapé.
         let start = start
@@ -219,9 +221,45 @@ fn accept(state: &mut State) {
                     && state.doc.rope().char_to_line(s) == state.doc.rope().char_to_line(cursor)
             })
             .unwrap_or(c.anchor);
+        let start = start.min(cursor);
+        let line = state.doc.rope().char_to_line(start);
+        let pad: String = state
+            .doc
+            .line_text(line)
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect();
+        let (text, caret) = reindent(&text, caret, &pad, &state.doc.indent.unit());
         state.doc.seal_history();
-        state.doc.edit(start.min(cursor)..cursor, &text);
+        state.doc.edit(start..cursor, &text);
+        if let Some(caret) = caret {
+            state.doc.set_cursor(start + caret, false);
+        }
     }
+}
+
+/// Bloc d'un serveur (Emmet…) : `\t` → indentation du fichier, lignes suivantes alignées sur la ligne courante.
+/// `caret` (en caractères) suit le texte transformé.
+fn reindent(text: &str, caret: Option<usize>, pad: &str, unit: &str) -> (String, Option<usize>) {
+    let mut out = String::with_capacity(text.len());
+    let mut n = 0;
+    let mut at = None;
+    for (i, c) in text.chars().enumerate() {
+        if caret == Some(i) {
+            at = Some(n);
+        }
+        let start = out.len();
+        match c {
+            '\t' => out.push_str(unit),
+            '\n' => {
+                out.push('\n');
+                out.push_str(pad);
+            }
+            c => out.push(c),
+        }
+        n += out[start..].chars().count();
+    }
+    (out, at.or(caret.map(|_| n)))
 }
 
 /// F8 / Shift+F8 : diagnostic suivant ou précédent du document actif, en boucle.
@@ -502,6 +540,7 @@ mod tests {
             kind: None,
             detail: None,
             insert_text: label.into(),
+            cursor: None,
             replace_start: None,
         }
     }
@@ -966,5 +1005,35 @@ mod tests {
         assert_eq!(diagnostic_counts(&s), (2, 2));
         let ordre: Vec<_> = problems(&s).into_iter().map(|(_, d)| d.message).collect();
         assert_eq!(ordre, ["a5", "a0", "b1", "b9", "b3"]);
+    }
+
+    #[test]
+    fn bloc_multiligne_reindente_et_curseur_au_premier_arret() {
+        let mut s = ouvert("/p/a.html", "  ");
+        update(&mut s, k(Key::End));
+        tape(&mut s, "ul");
+        let version = s.doc.version();
+        let ul = CompletionItem {
+            insert_text: "<ul>\n\t<li></li>\n</ul>".into(),
+            cursor: Some(10),
+            ..item("ul")
+        };
+        let path = s.doc.path.clone().unwrap_or_default();
+        update(
+            &mut s,
+            Event::CompletionResult {
+                path,
+                version,
+                items: vec![ul],
+                incomplete: true,
+            },
+        );
+        update(&mut s, k(Key::Enter));
+        assert_eq!(texte(&s), "  <ul>\n      <li></li>\n  </ul>");
+        let at = texte(&s).find("</li>").expect("li");
+        assert_eq!(s.doc.cursor(), at);
+        // Sans arrêt : curseur en fin d'insertion.
+        assert_eq!(reindent("a\tb", None, "", "  "), ("a  b".into(), None));
+        assert_eq!(reindent("ab", Some(2), "", "  "), ("ab".into(), Some(2)));
     }
 }
