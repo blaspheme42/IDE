@@ -2,6 +2,12 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; une version par jalon.
 
+## [Non publié]
+
+### Ajouté
+- PHP : coloration (`.php`, `.phtml`) et complétion avec intelephense.
+- Serveurs de langage par défaut pour HTML, CSS, JSON (vscode-langservers-extracted), PHP (intelephense), JavaScript et TypeScript (typescript-language-server).
+
 ## [1.0.0] — 2026-10-31 · J5 Version 1.0
 
 Les 21 exigences « Must » du cahier des charges sont implémentées, relues et testées.

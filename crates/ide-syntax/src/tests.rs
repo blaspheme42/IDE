@@ -1,6 +1,6 @@
 use super::*;
 
-const ALL: [Language; 11] = [
+const ALL: [Language; 12] = [
     Language::Rust,
     Language::Python,
     Language::C,
@@ -12,6 +12,7 @@ const ALL: [Language; 11] = [
     Language::Json,
     Language::Toml,
     Language::Markdown,
+    Language::Php,
 ];
 
 /// Catégorie de la première occurrence de `word` dans `text`.
@@ -47,6 +48,7 @@ fn from_path() {
     assert_eq!(f("Cargo.toml"), Some(Language::Toml));
     assert_eq!(f("Cargo.lock"), Some(Language::Toml));
     assert_eq!(f("README.md"), Some(Language::Markdown));
+    assert_eq!(f("index.php"), Some(Language::Php));
     assert_eq!(f("a.xyz"), None);
     assert_eq!(f("Makefile"), None);
     assert_eq!(Language::Tsx.name(), "TSX");
@@ -62,7 +64,7 @@ fn chaque_requete_compile() {
 #[test]
 fn neuf_langages_colores() {
     use Highlight as H;
-    let cases: [(Language, &str, &str, H); 16] = [
+    let cases: [(Language, &str, &str, H); 17] = [
         (
             Language::Rust,
             "fn main() { let x = \"a\"; } // c",
@@ -153,6 +155,12 @@ fn neuf_langages_colores() {
             "# Titre\n\ntexte\n",
             "Titre",
             H::Heading,
+        ),
+        (
+            Language::Php,
+            "<?php\nfunction f() { return 'x'; }\n",
+            "'x'",
+            H::String,
         ),
     ];
     for (lang, text, word, want) in cases {

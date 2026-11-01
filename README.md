@@ -1,6 +1,6 @@
 # IDE
 
-IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration tree-sitter, LSP et terminal intégré, le tout dans votre terminal.
+IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration tree-sitter et LSP, le tout dans votre terminal.
 
 **État :** version 1.0 — les 21 exigences « Must » du cahier des charges. Prochaines versions : exigences « Should » (multi-curseurs, écran divisé, terminal intégré, recherche dans le projet…).
 
@@ -16,7 +16,16 @@ cargo install --path crates/ide-app   # installe le binaire `ide` dans ~/.cargo/
 ide ~/mon-projet
 ```
 
-Serveurs de langage (facultatifs, détectés automatiquement) : `rustup component add rust-analyzer`, `clangd` (paquet `clangd`), `pyright` (`npm install -g pyright`).
+Serveurs de langage (facultatifs, démarrés automatiquement s'ils sont installés) :
+
+| Langage | Serveur | Installation |
+| --- | --- | --- |
+| Rust | rust-analyzer | `rustup component add rust-analyzer` |
+| C | clangd | paquet `clangd` |
+| Python | pyright | `npm install -g pyright` |
+| HTML, CSS, JSON | vscode-*-language-server | `npm install -g vscode-langservers-extracted` |
+| PHP | intelephense | `npm install -g intelephense` |
+| JavaScript, TypeScript | typescript-language-server | `npm install -g typescript typescript-language-server` |
 
 ## Commandes
 
@@ -75,7 +84,7 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 - Explorateur : `Ctrl+B` l'affiche ou le masque, `Ctrl+E` y place le focus ; flèches pour naviguer, `Entrée` ouvre, `n` / `Shift+N` nouveau fichier / dossier, `F2` ou `r` renommer, `m` déplacer, `Suppr` corbeille (confirmation), `.` fichiers cachés, `<` / `>` largeur.
 - Onglets : `Ctrl+W` fermer (deux fois si modifié), `Ctrl+PageSuiv` / `Ctrl+PagePréc` suivant / précédent, `Alt+1`…`Alt+9`.
 - Palettes : `Ctrl+P` ouvrir un fichier du projet (recherche floue), `Ctrl+Shift+P` toutes les commandes.
-- Code (serveur de langage, démarré automatiquement : rust-analyzer, pyright, clangd) : complétion à la frappe ou `Ctrl+Espace` (`Entrée`/`Tab` accepte), `Ctrl+K` infobulle, `F12` aller à la définition, `F8` / `Shift+F8` problème suivant / précédent, `Ctrl+Shift+M` panneau Problèmes. Un serveur absent ou planté n'empêche jamais d'éditer.
+- Code (serveur de langage démarré automatiquement, voir Installation) : complétion à la frappe ou `Ctrl+Espace` (`Entrée`/`Tab` accepte), `Ctrl+K` infobulle, `F12` aller à la définition, `F8` / `Shift+F8` problème suivant / précédent, `Ctrl+Shift+M` panneau Problèmes. Un serveur absent ou planté n'empêche jamais d'éditer.
 - Fichier modifié par un autre programme : rechargé automatiquement s'il n'a pas de modifications, sinon `Alt+R` recharge, `Alt+K` garde votre version.
 - `Ctrl+Q` : quitter ; s'il y a des modifications non sauvegardées, `Ctrl+Q` deux fois pour quitter sans sauvegarder.
 - Logs : `$XDG_STATE_HOME/ide/ide.log` (par défaut `~/.local/state/ide/ide.log`).
