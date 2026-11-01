@@ -4,7 +4,7 @@
 use std::ops::Range;
 use std::path::Path;
 
-use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
+use tree_sitter::{InputEdit, Node, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 /// Au-delà, pas de coloration (NF-03).
 const MAX_LEN: usize = 5 * 1024 * 1024;
@@ -126,7 +126,7 @@ impl Language {
                 tree_sitter_md::LANGUAGE.into(),
                 tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.into(),
             ),
-            // shortcut: le HTML hors des balises <?php ?> n'est pas coloré (pas d'injection) ; à ajouter avec les injections.
+            // Le HTML hors des balises <?php ?> est coloré par un second arbre (`Syntax::html`).
             Self::Php => (
                 tree_sitter_php::LANGUAGE_PHP.into(),
                 tree_sitter_php::HIGHLIGHTS_QUERY.into(),
@@ -241,6 +241,8 @@ pub struct Syntax {
     query: Query,
     /// Catégorie de chaque capture de `query`, par indice.
     captures: Vec<Option<Highlight>>,
+    /// PHP : HTML hors des balises `<?php ?>`, analysé sur ces seules plages.
+    html: Option<Box<Syntax>>,
 }
 
 impl Syntax {
@@ -259,13 +261,40 @@ impl Syntax {
         let mut parser = Parser::new();
         parser.set_language(&grammar).ok()?;
         let tree = Some(parser.parse(text, None)?);
-        Some(Self {
+        let html = match lang {
+            Language::Php => Some(Box::new(Syntax::new(Language::Html, "")?)),
+            _ => None,
+        };
+        let mut syntax = Self {
             parser,
             tree,
             language: lang,
             query,
             captures,
-        })
+            html,
+        };
+        syntax.reparse_html(text);
+        Some(syntax)
+    }
+
+    /// Reparse le HTML d'un fichier PHP sur les nœuds `text` (hors `<?php ?>`).
+    // shortcut: HTML reparsé en entier à chaque édition (ses plages bougent), à rendre incrémental si de gros PHP rament.
+    fn reparse_html(&mut self, text: &str) {
+        let Some(html) = &mut self.html else {
+            return;
+        };
+        let mut ranges = Vec::new();
+        if let Some(tree) = &self.tree {
+            collect_text(tree.root_node(), &mut ranges);
+        }
+        html.tree = if ranges.is_empty() {
+            None
+        } else {
+            html.parser
+                .set_included_ranges(&ranges)
+                .ok()
+                .and_then(|()| html.parser.parse(text, None))
+        };
     }
 
     /// Langage du document.
@@ -324,19 +353,41 @@ impl Syntax {
     pub fn reparse(&mut self, new_text: &str) {
         if new_text.len() > MAX_LEN {
             self.tree = None;
+            self.reparse_html(new_text);
             return;
         }
         self.tree = self.parser.parse(new_text, self.tree.as_ref());
+        self.reparse_html(new_text);
     }
 
     pub fn highlights(&self, text: &str, range: Range<usize>) -> Vec<(Range<usize>, Highlight)> {
         let range = range.start.min(text.len())..range.end.min(text.len());
-        let Some(tree) = &self.tree else {
-            return Vec::new();
-        };
         if range.is_empty() {
             return Vec::new();
         }
+        let mut paint: Vec<Option<Highlight>> = vec![None; range.len()];
+        // HTML d'abord : le PHP repeint par-dessus (ex. `<?= $x ?>` dans un attribut).
+        if let Some(html) = &self.html {
+            html.paint(text, &range, &mut paint);
+        }
+        self.paint(text, &range, &mut paint);
+        let mut out: Vec<(Range<usize>, Highlight)> = Vec::new();
+        for (i, h) in paint.into_iter().enumerate() {
+            let Some(h) = h else { continue };
+            let pos = range.start + i;
+            match out.last_mut() {
+                Some((r, last)) if r.end == pos && *last == h => r.end += 1,
+                _ => out.push((pos..pos + 1, h)),
+            }
+        }
+        out
+    }
+
+    /// Peint les captures de `range` dans `paint` (un octet par case).
+    fn paint(&self, text: &str, range: &Range<usize>, paint: &mut [Option<Highlight>]) {
+        let Some(tree) = &self.tree else {
+            return;
+        };
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(range.clone());
         // (début, fin, indice du motif, catégorie)
@@ -356,20 +407,21 @@ impl Syntax {
         // Peinture : les grands nœuds d'abord, les petits (plus spécifiques) par-dessus ;
         // à nœud égal, le premier motif de la requête gagne (convention tree-sitter).
         found.sort_by(|a, b| b.2.cmp(&a.2).then(b.3.cmp(&a.3)));
-        let mut paint: Vec<Option<Highlight>> = vec![None; range.len()];
         for (s, e, _, _, h) in found {
             paint[s - range.start..e - range.start].fill(Some(h));
         }
-        let mut out: Vec<(Range<usize>, Highlight)> = Vec::new();
-        for (i, h) in paint.into_iter().enumerate() {
-            let Some(h) = h else { continue };
-            let pos = range.start + i;
-            match out.last_mut() {
-                Some((r, last)) if r.end == pos && *last == h => r.end += 1,
-                _ => out.push((pos..pos + 1, h)),
-            }
-        }
-        out
+    }
+}
+
+/// Plages des nœuds `text` (HTML hors `<?php ?>`), dans l'ordre du document.
+fn collect_text(node: Node, out: &mut Vec<tree_sitter::Range>) {
+    if node.kind() == "text" {
+        out.push(node.range());
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_text(child, out);
     }
 }
 

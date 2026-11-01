@@ -64,7 +64,7 @@ fn chaque_requete_compile() {
 #[test]
 fn neuf_langages_colores() {
     use Highlight as H;
-    let cases: [(Language, &str, &str, H); 17] = [
+    let cases: [(Language, &str, &str, H); 19] = [
         (
             Language::Rust,
             "fn main() { let x = \"a\"; } // c",
@@ -161,6 +161,18 @@ fn neuf_langages_colores() {
             "<?php\nfunction f() { return 'x'; }\n",
             "'x'",
             H::String,
+        ),
+        (
+            Language::Php,
+            "<p class=\"a\"><?php echo 'x'; ?></p>",
+            "class",
+            H::Attribute,
+        ),
+        (
+            Language::Php,
+            "<p class=\"a\"><?php echo 'x'; ?></p>",
+            "echo",
+            H::Keyword,
         ),
     ];
     for (lang, text, word, want) in cases {
@@ -298,5 +310,21 @@ fn noms_en_minuscules() {
     assert_eq!(
         Highlight::Emphasis.name(),
         format!("{:?}", Highlight::Emphasis).to_lowercase()
+    );
+}
+
+#[test]
+fn php_html_suit_les_editions() {
+    let before = "<?php echo 1; ?>\n";
+    let mut syntax = Syntax::new(Language::Php, before).expect("php");
+    let after = "<?php echo 1; ?>\n<p class=\"a\"></p>";
+    let (b, a) = (before.len(), after.len());
+    syntax.edit(b, b, a, (1, 0), (1, 0), (1, a - b), after);
+    let at = after.find("class").expect("class");
+    let hl = syntax.highlights(after, 0..a);
+    assert!(
+        hl.iter()
+            .any(|(r, h)| r.contains(&at) && *h == Highlight::Attribute),
+        "{hl:?}"
     );
 }

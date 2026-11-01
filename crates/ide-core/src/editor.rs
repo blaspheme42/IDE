@@ -377,7 +377,11 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         Key::Char(c) if !c.is_control() => doc.insert_char(c),
         Key::Enter => doc.insert_newline(),
         Key::Tab if ext => doc.untab(),
-        Key::Tab => doc.tab(),
+        Key::Tab => {
+            if !expand_abbreviation(doc) {
+                doc.tab();
+            }
+        }
         Key::Backspace => doc.backspace(),
         Key::Delete => doc.delete(),
         Key::Left => doc.move_left(ext),
@@ -401,6 +405,60 @@ fn scroll_to_cursor(state: &mut State) {
     let w = usize::from(w.saturating_sub(gutter_width(&state.doc))).max(1);
     state.scroll_line = state.scroll_line.clamp(line.saturating_sub(h - 1), line);
     state.scroll_col = state.scroll_col.clamp(col.saturating_sub(w - 1), col);
+}
+
+/// Abréviations Emmet de base, seules avant le curseur dans un fichier HTML ou PHP :
+/// `!` → page HTML5 (curseur dans `<body>`), `!!!` → doctype. `false` si rien à développer.
+// shortcut: seulement `!` et `!!!` ; le reste d'Emmet (`div.a>li*3`) demanderait emmet-language-server en second serveur.
+fn expand_abbreviation(doc: &mut Document) -> bool {
+    let html = doc
+        .path
+        .as_ref()
+        .and_then(|p| p.extension()?.to_str())
+        .is_some_and(|e| {
+            matches!(
+                e.to_ascii_lowercase().as_str(),
+                "html" | "htm" | "php" | "phtml"
+            )
+        });
+    if !html || doc.selection().is_some() {
+        return false;
+    }
+    let cursor = doc.cursor();
+    let start = doc.rope().line_to_char(doc.rope().char_to_line(cursor));
+    let before = doc.rope().slice(start..cursor).to_string();
+    let abbr = before.trim_start();
+    let pad = &before[..before.len() - abbr.len()];
+    let unit = doc.indent.unit();
+    let (text, caret) = match abbr {
+        "!!!" => ("<!DOCTYPE html>".to_string(), None),
+        "!" => {
+            let head = [
+                "<!DOCTYPE html>".to_string(),
+                "<html lang=\"fr\">".into(),
+                "<head>".into(),
+                format!("{unit}<meta charset=\"UTF-8\">"),
+                format!(
+                    "{unit}<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+                ),
+                format!("{unit}<title>Document</title>"),
+                "</head>".into(),
+                "<body>".into(),
+                unit.clone(),
+            ]
+            .join(&format!("\n{pad}"));
+            let tail = format!("\n{pad}</body>\n{pad}</html>");
+            (format!("{head}{tail}"), Some(head.chars().count()))
+        }
+        _ => return false,
+    };
+    let at = cursor - abbr.chars().count();
+    doc.seal_history();
+    doc.edit(at..cursor, &text);
+    if let Some(caret) = caret {
+        doc.set_cursor(at + caret, false);
+    }
+    true
 }
 
 #[cfg(test)]
@@ -805,5 +863,43 @@ mod tests {
         assert_eq!(s.scroll_line, 17);
         update(&mut s, souris(MouseKind::Down, 36, 2));
         assert_eq!(s.doc.cursor_line_col(), (18, 0));
+    }
+
+    #[test]
+    fn abreviations_html() {
+        let ouvert = |path: &str, text: &str| {
+            let mut s = State::default();
+            let path = PathBuf::from(path);
+            update(
+                &mut s,
+                Event::FileOpened {
+                    path,
+                    text: text.into(),
+                },
+            );
+            update(&mut s, k(Key::End));
+            update(&mut s, k(Key::Tab));
+            s
+        };
+        let s = ouvert("/x/a.html", "!!!");
+        assert_eq!(s.doc.rope().to_string(), "<!DOCTYPE html>");
+        let s = ouvert("/x/a.php", "  !");
+        let text = s.doc.rope().to_string();
+        assert!(
+            text.starts_with(
+                "  <!DOCTYPE html>\n  <html lang=\"fr\">\n  <head>\n      <meta charset"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.ends_with("  <body>\n      \n  </body>\n  </html>"),
+            "{text}"
+        );
+        let line = s.doc.rope().char_to_line(s.doc.cursor());
+        assert_eq!(s.doc.line_text(line), "      ");
+        assert_eq!(s.doc.cursor(), s.doc.rope().line_to_char(line) + 6);
+        // Ailleurs : tabulation ordinaire.
+        assert_eq!(ouvert("/x/a.txt", "!").doc.rope().to_string(), "!   ");
+        assert_eq!(ouvert("/x/a.html", "a!").doc.rope().to_string(), "a!  ");
     }
 }
