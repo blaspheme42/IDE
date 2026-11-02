@@ -5,7 +5,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 ## [Non publié]
 
 ### Ajouté
-- `Ctrl+0` (ou « Code : mettre en page » dans la palette) met le fichier en page avec son serveur de langage (rustfmt via rust-analyzer, Prettier intégré aux serveurs web…), en une seule annulation, curseur conservé.
+- `Alt+Shift+F` ou `Ctrl+0` (ce dernier seulement dans les terminaux à protocole clavier étendu) met le fichier en page avec son serveur de langage (rustfmt via rust-analyzer, Prettier intégré aux serveurs web…), en une seule annulation, curseur conservé.
 - PHP : coloration (`.php`, `.phtml`), y compris le HTML hors des balises `<?php ?>`, et complétion avec intelephense (PHP et HTML).
 - Abréviations Emmet `!` (page HTML5) et `!!!` (doctype), développées par `Tab` dans les fichiers HTML et PHP.
 - Emmet complet dans la liste de complétion (HTML, CSS, PHP) avec emmet-language-server, lancé en plus du serveur du langage.

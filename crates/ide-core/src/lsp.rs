@@ -329,7 +329,7 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
     trigger(state, k)
 }
 
-/// Ctrl+Espace, Ctrl+K, F12, Ctrl+0, Ctrl+Shift+M, F8 / Shift+F8.
+/// Ctrl+Espace, Ctrl+K, F12, Ctrl+0 / Alt+Shift+F, Ctrl+Shift+M, F8 / Shift+F8.
 fn trigger(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
     let (ctrl, alt, shift) = (k.mods.ctrl, k.mods.alt, k.mods.shift);
     let cursor = state.doc.cursor();
@@ -347,11 +347,17 @@ fn trigger(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
             state.lsp_pending.definition_from = Some((path.clone(), state.doc.version()));
             Command::RequestDefinition { path, pos }
         }
-        Key::Char('0') if ctrl && !alt && !shift => Command::RequestFormat {
-            path: state.doc.path.clone()?,
-            version: state.doc.version(),
-            indent: state.doc.indent,
-        },
+        // Ctrl+0 n'existe que sur les terminaux à protocole clavier étendu ; Alt+Shift+F passe partout.
+        Key::Char(c @ ('0' | 'f' | 'F'))
+            if (c == '0' && ctrl && !alt && !shift)
+                || (c != '0' && alt && !ctrl && (shift || c == 'F')) =>
+        {
+            Command::RequestFormat {
+                path: state.doc.path.clone()?,
+                version: state.doc.version(),
+                indent: state.doc.indent,
+            }
+        }
         // Selon le terminal : `M` (avec ou sans Shift) ou `m` + Shift.
         Key::Char(c @ ('m' | 'M')) if ctrl && !alt && (shift || c == 'M') => {
             state.problems_open = !state.problems_open;
@@ -881,6 +887,18 @@ mod tests {
                 indent: s.doc.indent,
             }]
         );
+        let alt_shift_f = Event::Key(KeyInput {
+            key: Key::Char('F'),
+            mods: Modifiers {
+                ctrl: false,
+                alt: true,
+                shift: true,
+            },
+        });
+        assert!(matches!(
+            update(&mut s, alt_shift_f)[..],
+            [Command::RequestFormat { .. }]
+        ));
         let edits = vec![
             (pos(0, 6), pos(0, 6), " ".into()),
             (pos(1, 0), pos(1, 0), "    ".into()),
