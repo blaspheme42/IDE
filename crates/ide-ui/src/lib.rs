@@ -83,6 +83,7 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     let rope = doc.rope();
     let (cur_line, cur_col) = doc.cursor_line_col();
     let selection = doc.selection();
+    let brackets = doc.bracket_pair();
     let matches = state.search.as_ref().map_or(&[][..], |s| &s.matches[..]);
     let current = state
         .search
@@ -187,6 +188,8 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
                 }
                 if sel.contains(&k) {
                     base.patch(theme.selection)
+                } else if brackets.is_some_and(|(a, b)| start + k == a || start + k == b) {
+                    base.patch(theme.bracket_match)
                 } else {
                     find(&hits, k).map_or(base, |s| base.patch(s))
                 }

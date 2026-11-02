@@ -656,6 +656,44 @@ impl Document {
     }
 
     /// Plage sélectionnée triée, `None` si vide.
+    /// Parenthèse, crochet ou accolade sous le curseur (sinon juste avant) et son vis-à-vis.
+    /// shortcut: ne distingue pas chaînes et commentaires, recherche bornée à `BRACKET_SCAN` chars ;
+    /// passer par l'arbre tree-sitter si les faux appariements gênent.
+    pub fn bracket_pair(&self) -> Option<(usize, usize)> {
+        const PAIRS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
+        const BRACKET_SCAN: usize = 20_000;
+        let len = self.rope.len_chars();
+        let at = [Some(self.cursor), self.cursor.checked_sub(1)]
+            .into_iter()
+            .flatten()
+            .find(|&p| {
+                p < len
+                    && PAIRS
+                        .iter()
+                        .any(|&(o, c)| [o, c].contains(&self.rope.char(p)))
+            })?;
+        let ch = self.rope.char(at);
+        let (open, close) = *PAIRS.iter().find(|&&(o, c)| ch == o || ch == c)?;
+        let mut depth = 0usize;
+        let step = |i: usize, depth: &mut usize| {
+            let c = self.rope.char(i);
+            if c == ch {
+                *depth += 1;
+            } else if c == open || c == close {
+                *depth -= 1;
+            }
+            *depth == 0
+        };
+        let found = if ch == open {
+            (at..len.min(at + BRACKET_SCAN)).find(|&i| step(i, &mut depth))
+        } else {
+            (at.saturating_sub(BRACKET_SCAN)..=at)
+                .rev()
+                .find(|&i| step(i, &mut depth))
+        };
+        found.map(|other| (at, other))
+    }
+
     pub fn selection(&self) -> Option<Range<usize>> {
         let a = self.anchor.filter(|&a| a != self.cursor)?;
         Some(a.min(self.cursor)..a.max(self.cursor))
@@ -785,6 +823,22 @@ impl Document {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn parentheses_appariees() {
+        let paire = |text: &str, cursor| {
+            let mut d = Document::from_text(None, text);
+            d.set_cursor(cursor, false);
+            d.bracket_pair()
+        };
+        assert_eq!(paire("f(a[0], {b})", 1), Some((1, 11))); // sur `(`
+        assert_eq!(paire("f(a[0], {b})", 12), Some((11, 1))); // juste après `)`
+        assert_eq!(paire("f(a[0], {b})", 3), Some((3, 5))); // sur `[`
+        assert_eq!(paire("f(a[0], {b})", 9), Some((8, 10))); // après `{`, sur `b` : `{`
+        assert_eq!(paire("(()", 0), None); // non fermée
+        assert_eq!(paire("abc", 1), None);
+        assert_eq!(paire("", 0), None);
+    }
 
     fn doc(text: &str) -> Document {
         Document::from_text(Some("/tmp/f.txt".into()), text)
