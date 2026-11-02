@@ -356,6 +356,7 @@ fn trigger(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
                 path: state.doc.path.clone()?,
                 version: state.doc.version(),
                 indent: state.doc.indent,
+                save: false,
             }
         }
         // Selon le terminal : `M` (avec ou sans Shift) ou `m` + Shift.
@@ -470,22 +471,40 @@ pub(crate) fn hover_result(state: &mut State, path: PathBuf, text: Option<String
         .map(|text| Hover { text, at });
 }
 
-/// Mise en page : appliquée en une seule annulation, si le document n'a pas bougé depuis Ctrl+0.
+/// Mise en page : appliquée en une seule annulation si le document n'a pas bougé depuis la demande ;
+/// `save` : sauvegardé ensuite dans tous les cas (le Ctrl+S ne se perd jamais).
 pub(crate) fn format_result(
     state: &mut State,
     path: PathBuf,
     version: u64,
     edits: Vec<(Position, Position, String)>,
-) {
-    let doc = &mut state.doc;
-    if doc.path.as_ref() != Some(&path) || doc.version() != version {
-        return;
+    save: bool,
+) -> Vec<Command> {
+    // L'onglet a pu changer entre-temps : on vise le document de `path`, actif ou non.
+    let doc = if state.doc.path.as_ref() == Some(&path) {
+        &mut state.doc
+    } else {
+        match state
+            .tabs
+            .iter_mut()
+            .find(|t| t.doc.path.as_ref() == Some(&path))
+        {
+            Some(t) => &mut t.doc,
+            None => return vec![],
+        }
+    };
+    if doc.version() == version {
+        let edits = edits
+            .into_iter()
+            .map(|(a, b, t)| (doc.char_at_lsp(a)..doc.char_at_lsp(b), t))
+            .collect();
+        doc.edit_keeping_cursor(edits);
     }
-    let edits = edits
-        .into_iter()
-        .map(|(a, b, t)| (doc.char_at_lsp(a)..doc.char_at_lsp(b), t))
-        .collect();
-    doc.edit_keeping_cursor(edits);
+    if !save {
+        return vec![];
+    }
+    doc.seal_history();
+    vec![crate::editor::save_command(doc, path)]
 }
 
 /// Aller à la définition : ouvre le fichier si besoin et place le curseur.
@@ -885,6 +904,7 @@ mod tests {
                 path: "/p/a.rs".into(),
                 version: v,
                 indent: s.doc.indent,
+                save: false,
             }]
         );
         let alt_shift_f = Event::Key(KeyInput {
@@ -908,6 +928,7 @@ mod tests {
             path: "/p/a.rs".into(),
             version,
             edits: edits.clone(),
+            save: false,
         };
         // Document modifié depuis Ctrl+0 : ignorée.
         update(&mut s, reponse(v + 1000));
@@ -918,6 +939,34 @@ mod tests {
         // Une seule annulation.
         update(&mut s, touche(Key::Char('z'), true, false));
         assert_eq!(s.doc.rope().to_string(), "fn a(){\nx;}");
+    }
+
+    #[test]
+    fn ctrl_s_met_en_page_puis_sauvegarde() {
+        let mut s = ouvert("/p/a.rs", "x");
+        update(&mut s, touche(Key::Char('y'), false, false));
+        let v = s.doc.version();
+        let cmds = update(&mut s, touche(Key::Char('s'), true, false));
+        assert!(
+            matches!(&cmds[..], [Command::RequestFormat { save: true, version, .. }] if *version == v)
+        );
+        let reponse = |version| Event::FormatResult {
+            path: "/p/a.rs".into(),
+            version,
+            edits: vec![(pos(0, 0), pos(0, 0), "// ".into())],
+            save: true,
+        };
+        let cmds = update(&mut s, reponse(v));
+        assert!(matches!(&cmds[..], [Command::Save { contents, .. }] if contents == "// yx"));
+        // Frappe pendant la mise en page : elle est abandonnée, la sauvegarde a quand même lieu.
+        update(&mut s, touche(Key::Char('s'), true, false));
+        update(&mut s, touche(Key::Char('z'), false, false));
+        let cmds = update(&mut s, reponse(v));
+        assert!(matches!(&cmds[..], [Command::Save { contents, .. }] if contents == "// yzx"));
+        // Option coupée : sauvegarde directe.
+        s.settings.format_on_save = false;
+        let cmds = update(&mut s, touche(Key::Char('s'), true, false));
+        assert!(matches!(&cmds[..], [Command::Save { .. }]));
     }
 
     #[test]

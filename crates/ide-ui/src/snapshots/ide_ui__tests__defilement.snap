@@ -1,8 +1,9 @@
 ---
 source: crates/ide-ui/src/lib.rs
+assertion_line: 508
 expression: backend
 ---
-"┌ EXPLORATEUR ───────────────┐ long.txt                                         "
+"┌ EXPLORATEUR ───────────────┐ long.txt ×                                       "
 "│                            │   6  ne 06 abcdefghijklmnopqrstuvwxyz0123456789 x"
 "│                            │   7  ne 07 abcdefghijklmnopqrstuvwxyz0123456789 x"
 "│                            │   8  ne 08 abcdefghijklmnopqrstuvwxyz0123456789 x"

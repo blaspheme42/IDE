@@ -1,8 +1,9 @@
 ---
 source: crates/ide-ui/src/lib.rs
+assertion_line: 663
 expression: b
 ---
-"┌ EXPLORATEUR ───────────────┐ a.txt                                            "
+"┌ EXPLORATEUR ───────────────┐ a.txt ×                                          "
 "│                            │   1  foo bar foo baz foo                         "
 "│                            │   2  foo bar foo baz foo                         "
 "│                            │   3  foo bar foo baz foo                         "

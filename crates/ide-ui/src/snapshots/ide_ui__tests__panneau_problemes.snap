@@ -1,8 +1,9 @@
 ---
 source: crates/ide-ui/src/lib.rs
+assertion_line: 1097
 expression: b
 ---
-"┌ P ─────────────────────────┐ a.rs                                             "
+"┌ P ─────────────────────────┐ a.rs ×                                           "
 "│(dossier vide)              │   1 ⚠let x = io::st;                             "
 "│                            │   2  let x = io::st;                             "
 "│                            │   3  let x = io::st;                             "

@@ -158,6 +158,7 @@ pub enum Event {
         path: PathBuf,
         version: u64,
         edits: Vec<(Position, Position, String)>,
+        save: bool,
     },
     /// État du serveur pour la barre de statut (« rust-analyzer ✓ », « clangd : arrêté »…), vide = aucun.
     LspStatus(String),
@@ -239,6 +240,8 @@ pub enum Command {
         path: PathBuf,
         version: u64,
         indent: Indent,
+        /// Ctrl+S : sauvegarder après la mise en page (même sans serveur ou si elle échoue).
+        save: bool,
     },
     /// Relire un fichier ouvert, changé sur le disque → `Event::FileChanged`.
     Reload(PathBuf),
@@ -257,6 +260,8 @@ pub struct Settings {
     pub indent: Indent,
     pub explorer_width: u16,
     pub show_hidden: bool,
+    /// Mise en page par le serveur de langage avant chaque sauvegarde (F-45).
+    pub format_on_save: bool,
     /// Serveurs de langage par langage (`[lsp.*]`), défauts : `default_servers()`.
     pub lsp: Vec<LspServer>,
     /// Raccourcis personnalisés (`[keys]`) : touche → nom de commande de la palette.
@@ -271,6 +276,7 @@ impl Default for Settings {
             indent: Indent::default(),
             explorer_width: 30,
             show_hidden: false,
+            format_on_save: true,
             lsp: default_servers(),
             keys: Vec::new(),
         }

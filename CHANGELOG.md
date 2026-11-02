@@ -5,6 +5,8 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 ## [Non publié]
 
 ### Ajouté
+- Mise en page à la sauvegarde (`Ctrl+S`) par le serveur de langage ; `format_on_save = false` dans `[editor]` pour la couper. Sans serveur, ou si l'on tape pendant la mise en page, le fichier est sauvegardé tel quel.
+- Onglets : `×` (ou `●` si modifié) pour fermer d'un clic.
 - `Alt+Shift+F` ou `Ctrl+0` (ce dernier seulement dans les terminaux à protocole clavier étendu) met le fichier en page avec son serveur de langage (rustfmt via rust-analyzer, Prettier intégré aux serveurs web…), en une seule annulation, curseur conservé.
 - PHP : coloration (`.php`, `.phtml`), y compris le HTML hors des balises `<?php ?>`, et complétion avec intelephense (PHP et HTML).
 - Abréviations Emmet `!` (page HTML5) et `!!!` (doctype), développées par `Tab` dans les fichiers HTML et PHP.

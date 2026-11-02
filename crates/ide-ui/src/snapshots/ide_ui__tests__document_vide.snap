@@ -1,8 +1,9 @@
 ---
 source: crates/ide-ui/src/lib.rs
+assertion_line: 470
 expression: backend
 ---
-"┌ EXPLORATEUR ───────────────┐ [sans nom]                                       "
+"┌ EXPLORATEUR ───────────────┐ [sans nom] ×                                     "
 "│                            │   1                                              "
 "│                            │                                                  "
 "│                            │                                                  "

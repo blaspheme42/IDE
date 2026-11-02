@@ -396,6 +396,7 @@ impl LspManager {
                     path,
                     version,
                     indent,
+                    save,
                 } => {
                     let edits = match &client {
                         Some(c) => or_empty("formatting", c.formatting(&path, indent).await),
@@ -405,6 +406,7 @@ impl LspManager {
                         path,
                         version,
                         edits,
+                        save,
                     }
                 }
                 _ => return,

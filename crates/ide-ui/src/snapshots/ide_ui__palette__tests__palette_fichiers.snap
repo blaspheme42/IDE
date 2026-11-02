@@ -1,8 +1,9 @@
 ---
 source: crates/ide-ui/src/palette.rs
+assertion_line: 179
 expression: b
 ---
-"┌ EXPLORATEUR ───────────────┐ a.rs                                             "
+"┌ EXPLORATEUR ───────────────┐ a.rs ×                                           "
 "│               ┌ Ouvrir un fichier ───────────────────────────┐                "
 "│               │> rs                                          │                "
 "│               │main.rs                                    src│                "

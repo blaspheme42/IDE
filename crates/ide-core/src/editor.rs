@@ -69,10 +69,8 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             path,
             version,
             edits,
-        } => {
-            lsp::format_result(state, path, version, edits);
-            vec![]
-        }
+            save,
+        } => lsp::format_result(state, path, version, edits, save),
         Event::LspStatus(s) => {
             state.lsp_status = s;
             vec![]
@@ -201,6 +199,18 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     cmds
 }
 
+/// Écriture du texte courant de `doc` dans `path`.
+pub(crate) fn save_command(doc: &mut Document, path: std::path::PathBuf) -> Command {
+    let contents = doc.to_saved_text();
+    // Le watcher verra cette écriture : ce n'est pas un changement venu d'ailleurs.
+    doc.remember_disk(&contents);
+    Command::Save {
+        path,
+        contents,
+        version: doc.version(),
+    }
+}
+
 fn mouse(state: &mut State, m: MouseInput) {
     let last = state.doc.rope().len_lines() - 1;
     let left = crate::explorer_width(state) + gutter_width(&state.doc);
@@ -213,7 +223,11 @@ fn mouse(state: &mut State, m: MouseInput) {
             let tab = tabs::tab_spans(state)
                 .into_iter()
                 .find(|(r, _)| r.contains(&m.column));
-            if let Some((_, i)) = tab {
+            if let Some(i) = tabs::close_mark_at(state, m.column) {
+                // Activé d'abord : la fermeture vise toujours l'onglet actif.
+                tabs::activate(state, i);
+                tabs::request_close(state);
+            } else if let Some((_, i)) = tab {
                 tabs::activate(state, i);
             }
         }
@@ -328,14 +342,15 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
                 Some(path) => {
                     state.status = "Sauvegarde…".into();
                     doc.seal_history();
-                    let contents = doc.to_saved_text();
-                    // Le watcher verra cette écriture : ce n'est pas un changement venu d'ailleurs.
-                    doc.remember_disk(&contents);
-                    return vec![Command::Save {
-                        path,
-                        contents,
-                        version: doc.version(),
-                    }];
+                    if state.settings.format_on_save {
+                        return vec![Command::RequestFormat {
+                            path,
+                            version: doc.version(),
+                            indent: doc.indent,
+                            save: true,
+                        }];
+                    }
+                    return vec![save_command(doc, path)];
                 }
                 None => state.status = "Aucun fichier : lancez `ide <fichier>`".into(),
             },
@@ -512,6 +527,7 @@ mod tests {
     #[test]
     fn ouverture_edition_sauvegarde() {
         let mut s = opened("ab\r\n");
+        s.settings.format_on_save = false;
         assert_eq!(s.status, "Ouvert : a.txt");
         update(&mut s, k(Key::End));
         update(&mut s, k(Key::Char('c')));
@@ -558,6 +574,7 @@ mod tests {
     #[test]
     fn open_failed_garde_le_chemin() {
         let mut s = State::default();
+        s.settings.format_on_save = false;
         update(
             &mut s,
             Event::OpenFailed {

@@ -40,8 +40,9 @@ pub fn tab_list(state: &State) -> Vec<TabInfo> {
 }
 
 /// Texte d'un onglet dans la barre ; les onglets sont séparés par `│`.
+/// Le dernier symbole (`×`, ou `●` si modifié) ferme l'onglet au clic.
 pub fn tab_label(t: &TabInfo) -> String {
-    format!(" {}{} ", t.name, if t.dirty { " ●" } else { "" })
+    format!(" {} {} ", t.name, if t.dirty { "●" } else { "×" })
 }
 
 /// Colonnes (relatives à la barre) de chaque onglet, et décalage pour que l'actif soit visible.
@@ -81,6 +82,13 @@ pub fn tab_spans(state: &State) -> Vec<(Range<u16>, usize)> {
         .map(|(i, r)| (col(r.start)..col(r.end), i))
         .filter(|(r, _)| !r.is_empty())
         .collect()
+}
+
+/// Onglet dont le `×` / `●` (ou l'espace qui le suit) est affiché en colonne écran `column`.
+pub(crate) fn close_mark_at(state: &State, column: u16) -> Option<usize> {
+    let (ranges, offset) = layout(state);
+    let x = usize::from(column).checked_sub(usize::from(explorer_width(state)))? + offset;
+    ranges.iter().position(|r| x < r.end && x + 2 >= r.end)
 }
 
 /// Active l'onglet d'index d'affichage `i` ; la recherche ouverte se recalcule sur lui.
@@ -191,6 +199,21 @@ fn close(state: &mut State) {
         Tab::default()
     };
     put_active(state, t, state.active);
+}
+
+/// Ferme l'onglet actif ; s'il est modifié, seulement à la deuxième demande (Ctrl+W ou clic sur `●`).
+pub(crate) fn request_close(state: &mut State) {
+    if state.doc.is_dirty() && !state.close_armed {
+        state.close_armed = true;
+        state.status = format!(
+            "{} modifié : Ctrl+W à nouveau pour fermer sans sauvegarder",
+            state.doc.display_name()
+        );
+    } else {
+        state.close_armed = false;
+        state.status.clear();
+        close(state);
+    }
 }
 
 /// Nombre de documents modifiés, tous onglets confondus.
@@ -340,19 +363,7 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> bool {
             };
             activate(state, i);
         }
-        Key::Char('w' | 'W') if ctrl && !alt => {
-            if state.doc.is_dirty() && !state.close_armed {
-                state.close_armed = true;
-                state.status = format!(
-                    "{} modifié : Ctrl+W à nouveau pour fermer sans sauvegarder",
-                    state.doc.display_name()
-                );
-            } else {
-                state.close_armed = false;
-                state.status.clear();
-                close(state);
-            }
-        }
+        Key::Char('w' | 'W') if ctrl && !alt => request_close(state),
         _ => return false,
     }
     true
@@ -454,6 +465,7 @@ mod tests {
     #[test]
     fn saved_sur_un_onglet_inactif() {
         let mut s = trois();
+        s.settings.format_on_save = false;
         update(&mut s, touche(Key::Char('x'), false, false, false));
         let cmds = update(&mut s, ctrl('s'));
         let [Command::Save { version, .. }] = cmds[..] else {
@@ -475,6 +487,7 @@ mod tests {
     #[test]
     fn saved_ne_marque_que_le_document_qui_a_sauvegarde() {
         let mut s = trois();
+        s.settings.format_on_save = false;
         update(&mut s, touche(Key::Char('x'), false, false, false));
         let cmds = update(&mut s, ctrl('s'));
         let [Command::Save { version, .. }] = cmds[..] else {
@@ -628,6 +641,7 @@ mod tests {
     #[test]
     fn corbeille_d_un_fichier_ouvert() {
         let mut s = trois();
+        s.settings.format_on_save = false;
         fs(&mut s, FsChange::Trashed("/x/a.txt".into()));
         assert!(s.status.contains("Ctrl+S le recréera"), "{}", s.status);
         assert_eq!(chemins(&s)[0], Some(PathBuf::from("/x/a.txt")));
@@ -695,9 +709,9 @@ mod tests {
     #[test]
     fn clic_sur_un_onglet() {
         let mut s = trois();
-        // « a.txt » commence en colonne 30, après l'explorateur ; chaque onglet fait 7 colonnes + `│`.
+        // « a.txt » commence en colonne 30, après l'explorateur ; chaque onglet fait 9 colonnes + `│`.
         let spans = tab_spans(&s);
-        assert_eq!(spans, [(30..37, 0), (38..45, 1), (46..53, 2)]);
+        assert_eq!(spans, [(30..39, 0), (40..49, 1), (50..59, 2)]);
         let clic = |s: &mut State, column| {
             update(
                 s,
@@ -709,23 +723,38 @@ mod tests {
                 }),
             );
         };
-        clic(&mut s, 40);
+        clic(&mut s, 42);
         assert_eq!(actif(&s), "b.txt");
         // Sur un séparateur : rien.
-        clic(&mut s, 37);
+        clic(&mut s, 39);
         assert_eq!(actif(&s), "b.txt");
         assert!(!s.dragging);
+        // `×` de « a.txt » (onglet inactif) : fermé, « b.txt » reste actif.
+        clic(&mut s, 37);
+        assert_eq!(tab_list(&s).len(), 2);
+        assert_eq!(actif(&s), "b.txt");
+        // Onglet modifié : `●` demande confirmation, le second clic ferme.
+        update(&mut s, touche(Key::Char('x'), false, false, false));
+        clic(&mut s, 37);
+        assert!(s.close_armed);
+        assert_eq!(tab_list(&s).len(), 2);
+        clic(&mut s, 38);
+        assert_eq!(tab_list(&s).len(), 1);
+        assert_eq!(actif(&s), "c.txt");
     }
 
     #[test]
     fn barre_defile_pour_montrer_l_actif() {
         let mut s = trois();
         s.width = 45; // 15 colonnes de barre
-        assert_eq!(tab_scroll(&s), 53 - 30 - 15);
-        assert_eq!(tab_spans(&s), [(30..37, 1), (38..45, 2)]);
+        assert_eq!(tab_scroll(&s), 59 - 30 - 15);
+        assert_eq!(tab_spans(&s), [(30..35, 1), (36..45, 2)]);
         update(&mut s, touche(Key::Char('1'), false, true, false));
         assert_eq!(tab_scroll(&s), 0);
-        assert_eq!(tab_spans(&s), [(30..37, 0), (38..45, 1)]);
+        assert_eq!(tab_spans(&s), [(30..39, 0), (40..45, 1)]);
+        // `×` de « b.txt » hors de l'écran : un clic au bord ne ferme rien.
+        assert_eq!(close_mark_at(&s, 44), None);
+        assert_eq!(close_mark_at(&s, 37), Some(0));
     }
 
     fn disque(s: &mut State, path: &str, text: Option<&str>) {
@@ -753,6 +782,7 @@ mod tests {
     #[test]
     fn contenu_identique_ou_notre_sauvegarde_ne_fait_rien() {
         let mut s = trois();
+        s.settings.format_on_save = false;
         let v = s.doc.version();
         s.status.clear();
         disque(&mut s, "/x/c.txt", Some("ccc"));
@@ -794,6 +824,7 @@ mod tests {
     #[test]
     fn onglet_modifie_conflit_alt_k_garde() {
         let mut s = trois();
+        s.settings.format_on_save = false;
         update(&mut s, touche(Key::Char('m'), false, false, false));
         disque(&mut s, "/x/c.txt", Some("disque"));
         assert_eq!(s.doc.rope().to_string(), "mccc");

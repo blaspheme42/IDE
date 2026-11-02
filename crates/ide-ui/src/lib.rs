@@ -266,7 +266,7 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     palette::render(state, frame, theme);
 }
 
-/// Barre d'onglets ` nom ● │ nom2 │ …`, défilée comme `tab_spans` pour garder l'actif visible.
+/// Barre d'onglets ` nom ● │ nom2 × │ …`, défilée comme `tab_spans` pour garder l'actif visible.
 fn tab_bar(state: &State, area: Rect, frame: &mut Frame, theme: &Theme) {
     let mut spans = Vec::new();
     for t in tab_list(state) {
@@ -521,14 +521,14 @@ mod tests {
         s.doc.insert_char('y');
         let b = draw(&s);
         let line: String = (30..80).map(|x| b.buffer()[(x, 0)].symbol()).collect();
-        assert_eq!(line.trim_end(), " a.rs │ b.rs ●");
+        assert_eq!(line.trim_end(), " a.rs × │ b.rs ●");
         // Actif et inactifs aux styles du thème, séparateur couleur de bordure.
         let t = Theme::dark();
         let cell = |x: u16| &b.buffer()[(x, 0)];
-        assert!(a_style(cell(38), t.tab_active));
+        assert!(a_style(cell(40), t.tab_active));
         assert!(a_style(cell(31), t.tab_inactive));
         assert!(!cell(31).modifier.contains(Modifier::BOLD));
-        assert_eq!(cell(36).fg, t.border);
+        assert_eq!(cell(38).fg, t.border);
         // Trop étroit : la barre défile pour montrer l'actif en entier.
         s.width = 40;
         let mut t = Terminal::new(TestBackend::new(40, 24)).unwrap();

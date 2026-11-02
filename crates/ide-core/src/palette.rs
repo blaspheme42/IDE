@@ -450,6 +450,7 @@ mod tests {
     fn commande_rejouee_sans_detour_par_keys() {
         // `"ctrl+s" = "quit"` : la commande « sauvegarder » de la palette sauvegarde quand même.
         let mut s = State::default();
+        s.settings.format_on_save = false;
         s.doc.path = Some("/p/a.rs".into());
         s.settings
             .keys
@@ -554,6 +555,7 @@ mod tests {
         // Les deux formes envoyées par les terminaux.
         for c in ['P', 'p'] {
             let mut s = State::default();
+            s.settings.format_on_save = false;
             ouvrir_fichier(&mut s, "/p/a.rs", "x");
             assert!(update(&mut s, touche(Key::Char(c), true, true)).is_empty());
             assert_eq!(
