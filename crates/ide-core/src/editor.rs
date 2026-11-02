@@ -397,7 +397,12 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     }
     let ext = k.mods.shift;
     match k.key {
-        Key::Char(c) if !c.is_control() => doc.insert_char(c),
+        Key::Char(c) if !c.is_control() => {
+            doc.insert_char(c);
+            if c == '>' {
+                close_tag(doc);
+            }
+        }
         Key::Enter => doc.insert_newline(),
         Key::Tab if ext => doc.untab(),
         Key::Tab => {
@@ -430,12 +435,8 @@ fn scroll_to_cursor(state: &mut State) {
     state.scroll_col = state.scroll_col.clamp(col.saturating_sub(w - 1), col);
 }
 
-/// Abréviations Emmet de base, seules avant le curseur dans un fichier HTML ou PHP :
-/// `!` → page HTML5 (curseur dans `<body>`), `!!!` → doctype. `false` si rien à développer.
-// shortcut: seulement `!` et `!!!` ; le reste d'Emmet (`div.a>li*3`) demanderait emmet-language-server en second serveur.
-fn expand_abbreviation(doc: &mut Document) -> bool {
-    let html = doc
-        .path
+fn is_html(doc: &Document) -> bool {
+    doc.path
         .as_ref()
         .and_then(|p| p.extension()?.to_str())
         .is_some_and(|e| {
@@ -443,8 +444,60 @@ fn expand_abbreviation(doc: &mut Document) -> bool {
                 e.to_ascii_lowercase().as_str(),
                 "html" | "htm" | "php" | "phtml"
             )
-        });
-    if !html || doc.selection().is_some() {
+        })
+}
+
+/// Après le `>` d'une balise ouvrante (`<div class="a">`), insère `</div>` derrière le curseur.
+/// Rien pour les éléments vides (`<br>`), `/>`, `<!…>`, `<?php`, ni si la fermante suit déjà.
+// shortcut: un `>` dans la valeur d'un attribut coupe la balise ; suffisant pour la frappe courante.
+fn close_tag(doc: &mut Document) {
+    const VOID: [&str; 14] = [
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
+        "source", "track", "wbr",
+    ];
+    if !is_html(doc) {
+        return;
+    }
+    let rope = doc.rope();
+    let gt = doc.cursor() - 1;
+    let from = gt.saturating_sub(2000);
+    let Some(lt) = (from..gt)
+        .rev()
+        .find(|&i| matches!(rope.char(i), '<' | '>'))
+    else {
+        return;
+    };
+    let inner = rope.slice(lt + 1..gt).to_string();
+    if rope.char(lt) != '<' || inner.ends_with('/') {
+        return;
+    }
+    let name: String = inner
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | ':' | '.'))
+        .collect();
+    let starts_alpha = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
+    let rest = &inner[name.len()..];
+    if !starts_alpha
+        || !(rest.is_empty() || rest.starts_with(char::is_whitespace))
+        || VOID.contains(&name.to_ascii_lowercase().as_str())
+    {
+        return;
+    }
+    let closing = format!("</{name}>");
+    let cursor = doc.cursor();
+    let after = rope.slice(cursor..(cursor + closing.chars().count()).min(rope.len_chars()));
+    if after == closing.as_str() {
+        return;
+    }
+    doc.edit(cursor..cursor, &closing);
+    doc.set_cursor(cursor, false);
+}
+
+/// Abréviations Emmet de base, seules avant le curseur dans un fichier HTML ou PHP :
+/// `!` → page HTML5 (curseur dans `<body>`), `!!!` → doctype. `false` si rien à développer.
+// shortcut: seulement `!` et `!!!` ; le reste d'Emmet (`div.a>li*3`) demanderait emmet-language-server en second serveur.
+fn expand_abbreviation(doc: &mut Document) -> bool {
+    if !is_html(doc) || doc.selection().is_some() {
         return false;
     }
     let cursor = doc.cursor();
@@ -888,6 +941,60 @@ mod tests {
         assert_eq!(s.scroll_line, 17);
         update(&mut s, souris(MouseKind::Down, 36, 2));
         assert_eq!(s.doc.cursor_line_col(), (18, 0));
+    }
+
+    #[test]
+    fn balise_fermante_automatique() {
+        let tape = |path: &str, text: &str| {
+            let mut s = State::default();
+            update(
+                &mut s,
+                Event::FileOpened {
+                    path: path.into(),
+                    text: String::new(),
+                },
+            );
+            for c in text.chars() {
+                update(&mut s, k(Key::Char(c)));
+            }
+            let mut t = s.doc.rope().to_string();
+            t.insert(s.doc.rope().char_to_byte(s.doc.cursor()), '|');
+            t
+        };
+        assert_eq!(tape("/x/a.html", "<div>"), "<div>|</div>");
+        assert_eq!(
+            tape("/x/a.php", "<p class=\"a b\">x"),
+            "<p class=\"a b\">x|</p>"
+        );
+        assert_eq!(tape("/x/a.html", "<ul><li>"), "<ul><li>|</li></ul>");
+        assert_eq!(tape("/x/a.html", "<my-el>"), "<my-el>|</my-el>");
+        for rien in [
+            "<br>",
+            "<img src=\"a\">",
+            "<a/>",
+            "<!DOCTYPE html>",
+            "</p>",
+            "a > b",
+            "< b>",
+        ] {
+            assert_eq!(tape("/x/a.html", rien), format!("{rien}|"));
+        }
+        // Pas dans les autres langages (génériques Rust, comparaisons…).
+        assert_eq!(tape("/x/a.rs", "Vec<u8>"), "Vec<u8>|");
+        // Ctrl+Z retire la fermante seule.
+        let mut s = State::default();
+        update(
+            &mut s,
+            Event::FileOpened {
+                path: "/x/a.html".into(),
+                text: String::new(),
+            },
+        );
+        for c in "<b>".chars() {
+            update(&mut s, k(Key::Char(c)));
+        }
+        update(&mut s, ctrl('z'));
+        assert_eq!(s.doc.rope().to_string(), "<b>");
     }
 
     #[test]
