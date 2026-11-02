@@ -343,13 +343,14 @@ impl LspManager {
         }
     }
 
-    /// `RequestCompletion` / `RequestHover` / `RequestDefinition` → réponse en `Event` sur `tx`.
+    /// `RequestCompletion` / `RequestHover` / `RequestDefinition` / `RequestFormat` → réponse en `Event` sur `tx`.
     /// Sans serveur vivant : réponse vide tout de suite, le cœur n'attend jamais.
     pub fn request(&mut self, cmd: Command) {
         let path = match &cmd {
             Command::RequestCompletion { path, .. }
             | Command::RequestHover { path, .. }
-            | Command::RequestDefinition { path, .. } => path,
+            | Command::RequestDefinition { path, .. }
+            | Command::RequestFormat { path, .. } => path,
             _ => return,
         };
         let client = self.client(path);
@@ -390,6 +391,21 @@ impl LspManager {
                         Some(c) => or_empty("definition", c.definition(&path, pos).await),
                         None => Vec::new(),
                     })
+                }
+                Command::RequestFormat {
+                    path,
+                    version,
+                    indent,
+                } => {
+                    let edits = match &client {
+                        Some(c) => or_empty("formatting", c.formatting(&path, indent).await),
+                        None => Vec::new(),
+                    };
+                    Event::FormatResult {
+                        path,
+                        version,
+                        edits,
+                    }
                 }
                 _ => return,
             };

@@ -109,6 +109,7 @@ static COMMANDS: &[CommandInfo] = &[
         "Code : aller à la définition",
         with(Key::F(12), false, false),
     ),
+    cmd("format_document", "Code : mettre en page", ctrl('0')),
     cmd(
         "next_diagnostic",
         "Problèmes : suivant",

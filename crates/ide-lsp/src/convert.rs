@@ -223,6 +223,15 @@ pub(crate) fn locations(v: &Value) -> Vec<Location> {
     }
 }
 
+/// `TextEdit[]` (ou `null` : rien à changer).
+pub(crate) fn text_edits(v: &Value) -> Vec<(Position, Position, String)> {
+    let one = |e: &Value| {
+        let (start, end) = range(&e["range"])?;
+        Some((start, end, e["newText"].as_str()?.to_string()))
+    };
+    v.as_array().into_iter().flatten().filter_map(one).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,6 +247,14 @@ mod tests {
         assert_eq!(uri_to_path(&uri).as_deref(), Some(p));
         assert_eq!(uri_to_path("file://localhost/a%2"), Some("/a%2".into()));
         assert_eq!(uri_to_path("https://x"), None);
+    }
+
+    #[test]
+    fn editions_de_mise_en_page() {
+        let p = |line, character| Position { line, character };
+        let v = json!([{ "range": { "start": { "line": 0, "character": 1 }, "end": { "line": 2, "character": 0 } }, "newText": "x" }]);
+        assert_eq!(text_edits(&v), [(p(0, 1), p(2, 0), "x".to_string())]);
+        assert!(text_edits(&Value::Null).is_empty());
     }
 
     #[test]

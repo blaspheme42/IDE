@@ -336,6 +336,19 @@ impl Document {
         self.apply_many(edits, Kind::Other);
     }
 
+    /// Comme `edit_many`, mais le curseur suit le texte qu'il désignait (mise en page).
+    pub fn edit_keeping_cursor(&mut self, mut edits: Vec<(Range<usize>, String)>) {
+        edits.sort_by_key(|e| e.0.start);
+        let cursor = map_pos(self.cursor, &edits, false);
+        if self.apply_many(edits, Kind::Other) {
+            self.cursor = cursor.min(self.rope.len_chars());
+            // `Kind::Other` n'est jamais fusionné : la dernière entrée est celle-ci.
+            if let Some(e) = self.history.undo.last_mut() {
+                e.after = (self.cursor, None);
+            }
+        }
+    }
+
     /// `false` si rien n'a changé (aucune entrée d'historique).
     fn apply_many(&mut self, mut edits: Vec<(Range<usize>, String)>, kind: Kind) -> bool {
         let len = self.rope.len_chars();

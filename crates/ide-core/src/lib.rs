@@ -153,6 +153,12 @@ pub enum Event {
     },
     /// Réponse à `RequestDefinition`.
     DefinitionResult(Vec<Location>),
+    /// Réponse à `RequestFormat` : remplacements (début, fin, texte) sur le texte de `version`.
+    FormatResult {
+        path: PathBuf,
+        version: u64,
+        edits: Vec<(Position, Position, String)>,
+    },
     /// État du serveur pour la barre de statut (« rust-analyzer ✓ », « clangd : arrêté »…), vide = aucun.
     LspStatus(String),
     /// Fichiers du projet (chemins absolus, .gitignore respecté), réponse à `Command::ListFiles`.
@@ -227,6 +233,12 @@ pub enum Command {
     RequestDefinition {
         path: PathBuf,
         pos: Position,
+    },
+    /// Mise en page du document entier (`textDocument/formatting`) → `Event::FormatResult`.
+    RequestFormat {
+        path: PathBuf,
+        version: u64,
+        indent: Indent,
     },
     /// Relire un fichier ouvert, changé sur le disque → `Event::FileChanged`.
     Reload(PathBuf),

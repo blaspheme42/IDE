@@ -329,7 +329,7 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
     trigger(state, k)
 }
 
-/// Ctrl+Espace, Ctrl+K, F12, Ctrl+Shift+M, F8 / Shift+F8.
+/// Ctrl+Espace, Ctrl+K, F12, Ctrl+0, Ctrl+Shift+M, F8 / Shift+F8.
 fn trigger(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
     let (ctrl, alt, shift) = (k.mods.ctrl, k.mods.alt, k.mods.shift);
     let cursor = state.doc.cursor();
@@ -347,6 +347,11 @@ fn trigger(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
             state.lsp_pending.definition_from = Some((path.clone(), state.doc.version()));
             Command::RequestDefinition { path, pos }
         }
+        Key::Char('0') if ctrl && !alt && !shift => Command::RequestFormat {
+            path: state.doc.path.clone()?,
+            version: state.doc.version(),
+            indent: state.doc.indent,
+        },
         // Selon le terminal : `M` (avec ou sans Shift) ou `m` + Shift.
         Key::Char(c @ ('m' | 'M')) if ctrl && !alt && (shift || c == 'M') => {
             state.problems_open = !state.problems_open;
@@ -457,6 +462,24 @@ pub(crate) fn hover_result(state: &mut State, path: PathBuf, text: Option<String
     state.hover = text
         .filter(|t| !t.trim().is_empty())
         .map(|text| Hover { text, at });
+}
+
+/// Mise en page : appliquée en une seule annulation, si le document n'a pas bougé depuis Ctrl+0.
+pub(crate) fn format_result(
+    state: &mut State,
+    path: PathBuf,
+    version: u64,
+    edits: Vec<(Position, Position, String)>,
+) {
+    let doc = &mut state.doc;
+    if doc.path.as_ref() != Some(&path) || doc.version() != version {
+        return;
+    }
+    let edits = edits
+        .into_iter()
+        .map(|(a, b, t)| (doc.char_at_lsp(a)..doc.char_at_lsp(b), t))
+        .collect();
+    doc.edit_keeping_cursor(edits);
 }
 
 /// Aller à la définition : ouvre le fichier si besoin et place le curseur.
@@ -842,6 +865,41 @@ mod tests {
         };
         assert!(update(&mut s, Event::DefinitionResult(vec![loc])).is_empty());
         assert_eq!(s.doc.cursor(), 3);
+    }
+
+    #[test]
+    fn ctrl_0_met_en_page() {
+        let mut s = ouvert("/p/a.rs", "fn a(){\nx;}");
+        update(&mut s, k(Key::Down));
+        update(&mut s, k(Key::Right)); // curseur après `x`
+        let v = s.doc.version();
+        assert_eq!(
+            update(&mut s, touche(Key::Char('0'), true, false)),
+            [Command::RequestFormat {
+                path: "/p/a.rs".into(),
+                version: v,
+                indent: s.doc.indent,
+            }]
+        );
+        let edits = vec![
+            (pos(0, 6), pos(0, 6), " ".into()),
+            (pos(1, 0), pos(1, 0), "    ".into()),
+            (pos(1, 2), pos(1, 2), "\n".into()),
+        ];
+        let reponse = |version| Event::FormatResult {
+            path: "/p/a.rs".into(),
+            version,
+            edits: edits.clone(),
+        };
+        // Document modifié depuis Ctrl+0 : ignorée.
+        update(&mut s, reponse(v + 1000));
+        assert_eq!(s.doc.rope().to_string(), "fn a(){\nx;}");
+        update(&mut s, reponse(v));
+        assert_eq!(s.doc.rope().to_string(), "fn a() {\n    x;\n}");
+        assert_eq!(s.doc.cursor(), "fn a() {\n    x".len());
+        // Une seule annulation.
+        update(&mut s, touche(Key::Char('z'), true, false));
+        assert_eq!(s.doc.rope().to_string(), "fn a(){\nx;}");
     }
 
     #[test]

@@ -304,7 +304,8 @@ async fn run(
                     | Command::ListFiles { .. }) => workspace::spawn(cmd, tx.clone()),
                     cmd @ (Command::RequestCompletion { .. }
                     | Command::RequestHover { .. }
-                    | Command::RequestDefinition { .. }) => lsp.request(cmd),
+                    | Command::RequestDefinition { .. }
+                    | Command::RequestFormat { .. }) => lsp.request(cmd),
                     // Alt+N comme Alt+B : l'offre réglée est traitée par `cleanup`.
                     Command::DiscardBackup(_) => {}
                 }

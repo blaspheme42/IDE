@@ -65,6 +65,14 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
         Event::DefinitionResult(locations) => lsp::definition_result(state, locations),
+        Event::FormatResult {
+            path,
+            version,
+            edits,
+        } => {
+            lsp::format_result(state, path, version, edits);
+            vec![]
+        }
         Event::LspStatus(s) => {
             state.lsp_status = s;
             vec![]

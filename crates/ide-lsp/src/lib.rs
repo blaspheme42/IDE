@@ -179,6 +179,7 @@ impl Client {
                     "completion": { "completionItem": { "snippetSupport": true } },
                     "hover": { "contentFormat": ["plaintext", "markdown"] },
                     "definition": { "linkSupport": true },
+                    "formatting": {},
                     "publishDiagnostics": {},
                 },
                 "window": { "workDoneProgress": true },
@@ -235,6 +236,20 @@ impl Client {
     ) -> Result<Vec<ide_core::Location>, String> {
         let v = self.request("textDocument/definition", pos_params(path, pos));
         Ok(convert::locations(&v.await?))
+    }
+
+    /// `textDocument/formatting` du document entier → remplacements (début, fin, texte).
+    pub async fn formatting(
+        &self,
+        path: &Path,
+        indent: ide_core::Indent,
+    ) -> Result<Vec<(ide_core::Position, ide_core::Position, String)>, String> {
+        let params = json!({
+            "textDocument": { "uri": path_to_uri(path) },
+            "options": { "tabSize": indent.width, "insertSpaces": !indent.use_tabs },
+        });
+        let v = self.request("textDocument/formatting", params);
+        Ok(convert::text_edits(&v.await?))
     }
 
     /// `shutdown` + `exit`, puis kill si le processus traîne (≤ 1 s).
