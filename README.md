@@ -31,7 +31,7 @@
   master | main.rs                                rust-analyzer ✓ | Ln 6, Col 1 | LF | UTF-8
 ```
 
-> **Status: 1.0, usable for daily editing.** Tested on Linux. macOS is built by CI but not tested by hand. On Windows, use WSL. The interface (status messages, menus, prompts) is currently in French.
+> **Status: 1.1, usable for daily editing.** Tested on Linux. macOS is built by CI but not tested by hand. On Windows, use WSL. The interface (status messages, menus, prompts) is currently in French.
 
 ## Features
 

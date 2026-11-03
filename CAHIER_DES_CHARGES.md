@@ -1,6 +1,6 @@
 # Cahier des charges — IDE terminal en Rust
 
-30 octobre 2026 · Benjamin Marco · Version en ligne : https://claude.ai/artifact/Q8iKqLdTtSPaBkooC4rG7i
+30 octobre 2026 · Benjamin Marco
 
 ## Contexte et objectifs
 

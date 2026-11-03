@@ -4,7 +4,7 @@
 
 IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration tree-sitter et LSP, le tout dans votre terminal.
 
-**État :** version 1.0 — les 21 exigences « Must » du cahier des charges. Prochaines versions : exigences « Should » (multi-curseurs, écran divisé, terminal intégré, recherche dans le projet…).
+**État :** version 1.1 — les 21 exigences « Must » du cahier des charges, plus les langages web (HTML, CSS, PHP, JS/TS, Emmet), la mise en page, les paires automatiques et le repli des blocs. Prochaines versions : exigences « Should » (multi-curseurs, écran divisé, terminal intégré, recherche dans le projet…).
 
 ## Prérequis
 

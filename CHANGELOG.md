@@ -4,6 +4,8 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+## [1.1.0] — 2026-11-03 · Langages web et confort d'édition
+
 ### Ajouté
 - Repli des blocs (selon l'indentation) : `Alt+-` replie le bloc du curseur, `Alt+=` le déplie, `Alt+_` / `Alt++` replient / déplient tout ; clic dans la gouttière pour basculer une ligne. La gouttière marque d'un `-` les blocs repliables et d'un `+` les blocs repliés (suivis de `⋯`), les flèches le sautent, il se déplie si le curseur y arrive (recherche, F12, annuler).
 - Paires automatiques : taper `(`, `[`, `{`, `"` ou `'` insère la fermante derrière le curseur ; taper la fermante déjà présente la saute, et `Retour arrière` entre une paire vide retire les deux. Guillemets seulement hors d'un mot (`l'arbre`) ; pas de `'` en Rust.
@@ -17,6 +19,12 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 - Emmet complet dans la liste de complétion (HTML, CSS, PHP) avec emmet-language-server, lancé en plus du serveur du langage.
 - Complétion : curseur placé au premier arrêt du snippet (`class="|"`, `<li>|</li>`, `foo(|)`), blocs multilignes alignés sur la ligne courante.
 - Serveurs de langage par défaut pour HTML, CSS, JSON (vscode-langservers-extracted), PHP (intelephense), JavaScript et TypeScript (typescript-language-server).
+
+### Corrigé
+- macOS : après un plantage, un redémarrage dans les 2 minutes ne proposait pas les copies de secours (seul l'âge du verrou comptait, pas l'existence du processus).
+
+### Divers
+- Dépôt public sur GitHub, page de projet en anglais (`README.md`, version française dans `README.fr.md`), fichier `LICENSE` (MIT). Première CI macOS au vert.
 
 ## [1.0.0] — 2026-10-31 · J5 Version 1.0
 
