@@ -60,6 +60,17 @@ const fn ctrl(c: char) -> KeyInput {
     with(Key::Char(c), true, false)
 }
 
+const fn alt(c: char) -> KeyInput {
+    KeyInput {
+        key: Key::Char(c),
+        mods: Modifiers {
+            ctrl: false,
+            alt: true,
+            shift: false,
+        },
+    }
+}
+
 const fn cmd(name: &'static str, label: &'static str, key: KeyInput) -> CommandInfo {
     CommandInfo { name, label, key }
 }
@@ -121,6 +132,10 @@ static COMMANDS: &[CommandInfo] = &[
             },
         },
     ),
+    cmd("fold", "Code : replier le bloc", alt('-')),
+    cmd("unfold", "Code : déplier le bloc", alt('=')),
+    cmd("fold_all", "Code : tout replier", alt('_')),
+    cmd("unfold_all", "Code : tout déplier", alt('+')),
     cmd(
         "next_diagnostic",
         "Problèmes : suivant",

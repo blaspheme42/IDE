@@ -66,7 +66,7 @@ fn screen_pos(state: &State, text: Rect, pos: usize) -> Option<(u16, u16)> {
     let rope = state.doc.rope();
     let line = rope.char_to_line(pos.min(rope.len_chars()));
     let col = state.doc.display_col(line, pos - rope.line_to_char(line));
-    let dy = line.checked_sub(state.scroll_line)?;
+    let dy = state.doc.rows_between(state.scroll_line, line)?;
     let dx = col.checked_sub(state.scroll_col)?;
     (dy < text.height as usize && dx < text.width as usize)
         .then(|| (text.x + dx as u16, text.y + dy as u16))

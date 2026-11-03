@@ -90,16 +90,18 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         .as_ref()
         .and_then(|s| s.current)
         .and_then(|i| matches.get(i));
-    // NF-03 : seules les lignes visibles sont parcourues.
-    let visible = state.scroll_line
-        ..rope
-            .len_lines()
-            .min(state.scroll_line + text.height as usize);
+    // NF-03 : seules les lignes visibles sont parcourues ; un bloc replié compte pour une.
+    let shown = doc.visible_lines(state.scroll_line, text.height as usize);
+    let visible = shown
+        .first()
+        .map_or(0..0, |&a| a..shown[shown.len() - 1] + 1);
     let diags = lsp::visible_diagnostics(state, &visible);
+    let cur_row = shown.iter().position(|&l| l == cur_line);
     let nerd = state.settings.nerd_icons;
     let mut numbers = Vec::new();
     let mut lines = Vec::new();
-    for i in visible {
+    for &i in &shown {
+        let folded = doc.is_folded(i);
         let style = if i == cur_line {
             theme.gutter_current
         } else {
@@ -131,7 +133,7 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
                 ),
                 style,
             ),
-            Span::raw(" "),
+            Span::styled(if folded { "▸" } else { " " }, style),
             marker,
         ]));
         // Sélection ramenée en index de char relatifs à la ligne (vide si hors ligne).
@@ -171,7 +173,7 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
             .checked_sub(1)
             .filter(|k| sel.contains(k))
             .map(|_| theme.selection);
-        lines.push(Line::from(visible_slice(
+        let mut spans = visible_slice(
             line.chars(),
             state.scroll_col,
             text.width as usize,
@@ -194,14 +196,16 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
                     find(&hits, k).map_or(base, |s| base.patch(s))
                 }
             },
-        )));
+        );
+        if folded {
+            spans.push(Span::styled(" ⋯", Style::new().fg(theme.gutter)));
+        }
+        lines.push(Line::from(spans));
     }
     frame.render_widget(Paragraph::new(numbers), gutter);
     // Ligne courante posée avant le texte pour que le fond des occurrences reste visible.
-    if selection.is_none()
-        && (state.scroll_line..state.scroll_line + text.height as usize).contains(&cur_line)
-    {
-        let y = text.y + (cur_line - state.scroll_line) as u16;
+    if let Some(row) = cur_row.filter(|_| selection.is_none()) {
+        let y = text.y + row as u16;
         frame.buffer_mut().set_style(
             Rect {
                 y,
@@ -222,13 +226,13 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     let editor_focus = state.focus == ide_core::Focus::Editor;
     if let Some(s) = &state.search {
         search_bar(s, bar, frame, editor_focus, theme);
-    } else if editor_focus
-        && (state.scroll_line..state.scroll_line + text.height as usize).contains(&cur_line)
-        && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_col)
-    {
+    } else if let Some(row) = cur_row.filter(|_| {
+        editor_focus
+            && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_col)
+    }) {
         frame.set_cursor_position(Position::new(
             text.x + (cur_col - state.scroll_col) as u16,
-            text.y + (cur_line - state.scroll_line) as u16,
+            text.y + row as u16,
         ));
     }
 

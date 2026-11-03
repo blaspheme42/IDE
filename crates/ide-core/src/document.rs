@@ -9,6 +9,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::history::{Change, Entry, History, Kind};
 
+mod fold;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LineEnding {
     #[default]
@@ -86,6 +88,8 @@ pub struct Document {
     /// Empreintes des derniers contenus disque connus (lu, sauvegardé, refusé) : les retrouver sur le
     /// disque n'est pas un changement venu d'ailleurs (notre propre sauvegarde, même si l'on a retapé depuis).
     pub disk_hashes: Vec<u64>,
+    /// Lignes d'en-tête des blocs repliés (voir `fold.rs`).
+    folds: Vec<usize>,
 }
 
 /// Une édition en octets et en (ligne, colonne-octet), avant/après, au format de `tree_sitter::InputEdit`.
@@ -575,13 +579,15 @@ impl Document {
         self.rope.remove(range.clone());
         self.rope.insert(range.start, text);
         let new_end_byte = start_byte + text.len();
+        let new_end = point(&self.rope, new_end_byte);
+        self.shift_folds(start.0, old_end.0, new_end.0);
         self.edits.push(TextEdit {
             start_byte,
             old_end_byte,
             new_end_byte,
             start,
             old_end,
-            new_end: point(&self.rope, new_end_byte),
+            new_end,
         });
     }
 
@@ -733,23 +739,23 @@ impl Document {
             Some(r) if !extend => r.start,
             _ => self.prev_boundary(self.cursor),
         };
-        self.set_cursor(pos, extend);
+        self.set_cursor(self.past_folds(pos, false), extend);
     }
     pub fn move_right(&mut self, extend: bool) {
         let pos = match self.selection() {
             Some(r) if !extend => r.end,
             _ => self.next_boundary(self.cursor),
         };
-        self.set_cursor(pos, extend);
+        self.set_cursor(self.past_folds(pos, true), extend);
     }
+    /// Lignes visibles seulement : un bloc replié compte pour une ligne.
     pub fn move_up(&mut self, lines: usize, extend: bool) {
         let line = self.rope.char_to_line(self.cursor);
-        self.move_to_line(line.saturating_sub(lines), extend);
+        self.move_to_line(self.step_visible(line, lines, false), extend);
     }
     pub fn move_down(&mut self, lines: usize, extend: bool) {
         let line = self.rope.char_to_line(self.cursor);
-        let last = self.rope.len_lines() - 1;
-        self.move_to_line(line.saturating_add(lines).min(last), extend);
+        self.move_to_line(self.step_visible(line, lines, true), extend);
     }
     fn move_to_line(&mut self, line: usize, extend: bool) {
         let target = self

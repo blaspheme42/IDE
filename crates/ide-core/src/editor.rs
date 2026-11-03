@@ -193,6 +193,9 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         search::refresh(state, false);
     }
     cmds.extend(lsp::after_update(state, version));
+    // Curseur amené dans un bloc replié (recherche, F12, annuler…) : on le déplie.
+    let line = state.doc.cursor_line_col().0;
+    state.doc.reveal(line);
     if !wheel {
         scroll_to_cursor(state);
     }
@@ -212,7 +215,6 @@ pub(crate) fn save_command(doc: &mut Document, path: std::path::PathBuf) -> Comm
 }
 
 fn mouse(state: &mut State, m: MouseInput) {
-    let last = state.doc.rope().len_lines() - 1;
     let left = crate::explorer_width(state) + gutter_width(&state.doc);
     // Ligne 0 : onglets, puis le bandeau de copie de secours s'il est affiché, puis le texte.
     let top = TAB_BAR_HEIGHT + crate::banner_height(state);
@@ -231,9 +233,31 @@ fn mouse(state: &mut State, m: MouseInput) {
                 tabs::activate(state, i);
             }
         }
-        MouseKind::ScrollUp => state.scroll_line = state.scroll_line.saturating_sub(WHEEL_LINES),
-        MouseKind::ScrollDown => state.scroll_line = (state.scroll_line + WHEEL_LINES).min(last),
+        MouseKind::ScrollUp => {
+            state.scroll_line = state
+                .doc
+                .step_visible(state.scroll_line, WHEEL_LINES, false);
+        }
+        MouseKind::ScrollDown => {
+            state.scroll_line = state.doc.step_visible(state.scroll_line, WHEEL_LINES, true);
+        }
         MouseKind::Up => state.dragging = false,
+        // Clic dans la gouttière : replie ou déplie le bloc de la ligne.
+        MouseKind::Down
+            if m.column < left
+                && m.column >= crate::explorer_width(state)
+                && (top..bottom).contains(&m.row) =>
+        {
+            state.dragging = false;
+            let rows = usize::from(m.row - top) + 1;
+            if let Some(&line) = state
+                .doc
+                .visible_lines(state.scroll_line, rows)
+                .get(rows - 1)
+            {
+                state.doc.toggle_fold(line);
+            }
+        }
         // Un clic hors de la zone de texte est ignoré ; un glisser peut en sortir, s'il y a commencé.
         MouseKind::Down if m.column < left || m.row < top || m.row >= bottom => {
             state.dragging = false;
@@ -241,7 +265,8 @@ fn mouse(state: &mut State, m: MouseInput) {
         MouseKind::Drag if !state.dragging => {}
         MouseKind::Down | MouseKind::Drag => {
             state.dragging = true;
-            let line = state.scroll_line + usize::from(m.row.saturating_sub(top));
+            let row = usize::from(m.row.saturating_sub(top));
+            let line = state.doc.step_visible(state.scroll_line, row, true);
             let col = state.scroll_col + usize::from(m.column.saturating_sub(left));
             let pos = state.doc.pos_at(line, col);
             let extend = m.kind == MouseKind::Drag || m.mods.shift;
@@ -388,10 +413,22 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     }
     if k.mods.alt {
         // Alt+Retour arrière : la plupart des terminaux envoient Ctrl+Retour arrière comme Ctrl+H.
-        if k.key == Key::Backspace && !k.mods.ctrl {
-            doc.delete_word_before();
-        } else {
-            state.status = k.to_string();
+        match k.key {
+            Key::Backspace if !k.mods.ctrl => doc.delete_word_before(),
+            // Repli : `Alt+-` / `Alt+=` au curseur, avec Shift (`_` / `+`) pour tout le fichier.
+            Key::Char('-') if !k.mods.shift => {
+                if !doc.fold_at_cursor() {
+                    state.status = "Aucun bloc à replier ici".into();
+                }
+            }
+            Key::Char('=') if !k.mods.shift => {
+                if !doc.unfold_at_cursor() {
+                    state.status = "Aucun bloc replié sur cette ligne".into();
+                }
+            }
+            Key::Char('_' | '-') => doc.fold_all(),
+            Key::Char('+' | '=') => doc.unfold_all(),
+            _ => state.status = k.to_string(),
         }
         return vec![];
     }
@@ -445,7 +482,14 @@ fn scroll_to_cursor(state: &mut State) {
     let (w, h) = editor_size(state);
     let h = usize::from(h).max(1);
     let w = usize::from(w.saturating_sub(gutter_width(&state.doc))).max(1);
-    state.scroll_line = state.scroll_line.clamp(line.saturating_sub(h - 1), line);
+    // En lignes visibles : un bloc replié n'occupe qu'une rangée.
+    let doc = &state.doc;
+    let top = doc.step_visible(state.scroll_line, 0, false);
+    state.scroll_line = match doc.rows_between(top, line) {
+        None => line.min(top),
+        Some(rows) if rows >= h => doc.step_visible(line, h - 1, false),
+        Some(_) => top,
+    };
     state.scroll_col = state.scroll_col.clamp(col.saturating_sub(w - 1), col);
 }
 
@@ -989,6 +1033,41 @@ mod tests {
         assert_eq!(s.scroll_line, 17);
         update(&mut s, souris(MouseKind::Down, 36, 2));
         assert_eq!(s.doc.cursor_line_col(), (18, 0));
+    }
+
+    #[test]
+    fn repli_des_blocs() {
+        let alt = |c| {
+            Event::Key(KeyInput {
+                key: Key::Char(c),
+                mods: Modifiers {
+                    ctrl: false,
+                    alt: true,
+                    shift: false,
+                },
+            })
+        };
+        let mut s = opened("fn a() {\n    x();\n    y();\n}\nz\n");
+        update(&mut s, alt('-'));
+        assert!(s.doc.is_folded(0));
+        update(&mut s, k(Key::Down));
+        assert_eq!(s.doc.cursor_line_col().0, 3);
+        // Ctrl+Z ou recherche qui amène le curseur dans le bloc : il se déplie.
+        let pos = s.doc.pos_at(2, 0);
+        s.doc.set_cursor(pos, false);
+        update(&mut s, Event::GitBranch(None));
+        assert!(!s.doc.is_folded(0));
+        update(&mut s, alt('_'));
+        assert_eq!(s.doc.cursor_line_col(), (0, 8));
+        update(&mut s, alt('='));
+        assert!(!s.doc.is_folded(0));
+        // Clic dans la gouttière (colonnes 30 à 35, texte à partir de la ligne 1) : bascule.
+        update(&mut s, souris(MouseKind::Down, 31, 1));
+        assert!(s.doc.is_folded(0));
+        update(&mut s, souris(MouseKind::Down, 37, 2));
+        assert_eq!(s.doc.cursor_line_col().0, 3);
+        update(&mut s, souris(MouseKind::Down, 31, 1));
+        assert!(!s.doc.is_folded(0));
     }
 
     #[test]

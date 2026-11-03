@@ -62,8 +62,11 @@ impl Highlighter {
             return Vec::new();
         };
         let rope = state.doc.rope();
-        let first = state.scroll_line.min(rope.len_lines());
-        let last = (state.scroll_line + usize::from(editor_size(state).1)).min(rope.len_lines());
+        let shown = state
+            .doc
+            .visible_lines(state.scroll_line, usize::from(editor_size(state).1));
+        let first = shown.first().map_or(0, |&l| l);
+        let last = shown.last().map_or(0, |&l| l + 1);
         let bytes = rope.line_to_byte(first)..rope.line_to_byte(last);
         // shortcut: `highlights` veut un `&str` entier, copie O(n) par rendu ; TextProvider sur la rope si ça se voit.
         syntax
