@@ -173,7 +173,7 @@ impl Document {
     }
 
     /// Comme `fold_range(line).is_some()`, sans parcourir tout le bloc.
-    fn opens_block(&self, line: usize) -> bool {
+    pub fn opens_block(&self, line: usize) -> bool {
         let Some(base) = self.indent_of(line) else {
             return false;
         };

@@ -1,13 +1,13 @@
 ---
 source: crates/ide-ui/src/lib.rs
-assertion_line: 487
+assertion_line: 504
 expression: backend
 ---
 "┌ EXPLORATEUR ───────────────┐ notes.txt ×                                      "
-"│                            │   1  fn main() {                                 "
-"│                            │   2      let é = "café";                         "
-"│                            │   3      // 🦀 crabe 日本                        " Hidden by multi-width symbols: [(44, " "), (53, " "), (55, " ")]
-"│                            │   4  }                                           "
+"│                            │   1 - fn main() {                                "
+"│                            │   2       let é = "café";                        "
+"│                            │   3       // 🦀 crabe 日本                       " Hidden by multi-width symbols: [(45, " "), (54, " "), (56, " ")]
+"│                            │   4   }                                          "
 "│                            │   5                                              "
 "│                            │                                                  "
 "│                            │                                                  "

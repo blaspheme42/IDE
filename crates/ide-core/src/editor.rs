@@ -5,10 +5,11 @@ use crate::{
     editor_size, explorer, lsp, palette, search, tabs,
 };
 
-/// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace, colonne de diagnostics.
+/// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace,
+/// marque de repli (`-` / `+`), colonne de diagnostics.
 pub fn gutter_width(doc: &Document) -> u16 {
     let digits = doc.rope().len_lines().to_string().len().max(4);
-    u16::try_from(digits + 2).unwrap_or(u16::MAX)
+    u16::try_from(digits + 3).unwrap_or(u16::MAX)
 }
 
 /// Lignes défilées par cran de molette.
@@ -780,9 +781,9 @@ mod tests {
         for c in "中文ab".chars() {
             update(&mut s, k(Key::Char(c)));
         }
-        // Idéogrammes = 2 colonnes : curseur en colonne 6, 4 colonnes visibles.
+        // Idéogrammes = 2 colonnes : curseur en colonne 6, 3 colonnes visibles.
         assert_eq!(s.doc.cursor_line_col().1, 6);
-        assert_eq!(s.scroll_col, 3);
+        assert_eq!(s.scroll_col, 4);
         update(&mut s, k(Key::Home));
         assert_eq!(s.scroll_col, 0);
     }
@@ -883,14 +884,14 @@ mod tests {
 
     #[test]
     fn gouttiere_s_elargit_au_dela_de_9999_lignes() {
-        assert_eq!(gutter_width(&Document::default()), 6);
+        assert_eq!(gutter_width(&Document::default()), 7);
         assert_eq!(
             gutter_width(&Document::from_text(None, &"\n".repeat(9_998))),
-            6
+            7
         );
         assert_eq!(
             gutter_width(&Document::from_text(None, &"\n".repeat(9_999))),
-            7
+            8
         );
     }
 
@@ -1003,35 +1004,35 @@ mod tests {
 
     #[test]
     fn souris_clic_glisser_defilement() {
-        // Texte à partir de la colonne 30 + 6 = 36 ; 5 lignes visibles, à partir de la ligne 1 (onglets en 0).
+        // Texte à partir de la colonne 30 + 7 = 37 ; 5 lignes visibles, à partir de la ligne 1 (onglets en 0).
         let mut s = opened("abc\nd中e\n");
-        update(&mut s, souris(MouseKind::Down, 37, 1));
+        update(&mut s, souris(MouseKind::Down, 38, 1));
         assert_eq!(s.doc.cursor(), 1);
-        update(&mut s, souris(MouseKind::Drag, 38, 2)); // colonne 2 = milieu de 中 : avant
+        update(&mut s, souris(MouseKind::Drag, 39, 2)); // colonne 2 = milieu de 中 : avant
         assert_eq!(s.doc.selection(), Some(1..5));
-        update(&mut s, souris(MouseKind::Up, 38, 2));
+        update(&mut s, souris(MouseKind::Up, 39, 2));
         assert_eq!(s.doc.selection(), Some(1..5));
         // Au-delà de la fin de ligne, puis au-delà du document.
-        update(&mut s, souris(MouseKind::Down, 39, 1));
+        update(&mut s, souris(MouseKind::Down, 40, 1));
         assert_eq!((s.doc.cursor(), s.doc.selection()), (3, None));
-        update(&mut s, souris(MouseKind::Down, 50, 5));
+        update(&mut s, souris(MouseKind::Down, 51, 5));
         assert_eq!(s.doc.cursor(), 8);
         // Clic dans l'explorateur, la barre d'onglets hors onglet ou la barre de statut : ignoré.
-        update(&mut s, souris(MouseKind::Down, 70, 0));
+        update(&mut s, souris(MouseKind::Down, 71, 0));
         update(&mut s, souris(MouseKind::Down, 5, 1));
-        update(&mut s, souris(MouseKind::Down, 37, 6));
+        update(&mut s, souris(MouseKind::Down, 38, 6));
         assert_eq!(s.doc.cursor(), 8);
         let mut s = opened(&"l\n".repeat(20));
-        update(&mut s, souris(MouseKind::ScrollDown, 37, 1));
-        update(&mut s, souris(MouseKind::ScrollDown, 37, 1));
+        update(&mut s, souris(MouseKind::ScrollDown, 38, 1));
+        update(&mut s, souris(MouseKind::ScrollDown, 38, 1));
         assert_eq!((s.scroll_line, s.doc.cursor()), (6, 0));
         for _ in 0..10 {
-            update(&mut s, souris(MouseKind::ScrollDown, 37, 1));
+            update(&mut s, souris(MouseKind::ScrollDown, 38, 1));
         }
         assert_eq!(s.scroll_line, 20);
-        update(&mut s, souris(MouseKind::ScrollUp, 37, 1));
+        update(&mut s, souris(MouseKind::ScrollUp, 38, 1));
         assert_eq!(s.scroll_line, 17);
-        update(&mut s, souris(MouseKind::Down, 36, 2));
+        update(&mut s, souris(MouseKind::Down, 37, 2));
         assert_eq!(s.doc.cursor_line_col(), (18, 0));
     }
 
@@ -1061,10 +1062,10 @@ mod tests {
         assert_eq!(s.doc.cursor_line_col(), (0, 8));
         update(&mut s, alt('='));
         assert!(!s.doc.is_folded(0));
-        // Clic dans la gouttière (colonnes 30 à 35, texte à partir de la ligne 1) : bascule.
+        // Clic dans la gouttière (colonnes 30 à 36, texte à partir de la ligne 1) : bascule.
         update(&mut s, souris(MouseKind::Down, 31, 1));
         assert!(s.doc.is_folded(0));
-        update(&mut s, souris(MouseKind::Down, 37, 2));
+        update(&mut s, souris(MouseKind::Down, 38, 2));
         assert_eq!(s.doc.cursor_line_col().0, 3);
         update(&mut s, souris(MouseKind::Down, 31, 1));
         assert!(!s.doc.is_folded(0));

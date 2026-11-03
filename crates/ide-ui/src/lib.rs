@@ -123,17 +123,27 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
                 Style::new().fg(lsp::color(*sev, theme)),
             )
         });
-        // Gouttière : numéro aligné à droite, espace, colonne de diagnostics.
+        // Gouttière : numéro aligné à droite, espace, marque de repli, colonne de diagnostics.
         numbers.push(Line::from(vec![
             Span::styled(
                 format!(
                     "{:>w$}",
                     i + 1,
-                    w = usize::from(gutter.width).saturating_sub(2)
+                    w = usize::from(gutter.width).saturating_sub(3)
                 ),
                 style,
             ),
-            Span::styled(if folded { "▸" } else { " " }, style),
+            Span::raw(" "),
+            Span::styled(
+                if folded {
+                    "+"
+                } else if doc.opens_block(i) {
+                    "-"
+                } else {
+                    " "
+                },
+                style,
+            ),
             marker,
         ]));
         // Sélection ramenée en index de char relatifs à la ligne (vide si hors ligne).
@@ -464,18 +474,18 @@ mod tests {
         );
         assert_eq!(b.buffer()[(31, 1)].fg, Theme::dark().warning);
         // Le texte commence une ligne plus bas, le curseur aussi.
-        assert!(row(&b, 2).contains("1  un"), "{}", row(&b, 2));
-        assert_eq!(b.cursor_position(), Position::new(36, 2));
+        assert!(row(&b, 2).contains("1   un"), "{}", row(&b, 2));
+        assert_eq!(b.cursor_position(), Position::new(37, 2));
         s.backup_offer = None;
         let b = draw(&s);
-        assert!(row(&b, 1).contains("1  un"), "{}", row(&b, 1));
+        assert!(row(&b, 1).contains("1   un"), "{}", row(&b, 1));
     }
 
     #[test]
     fn document_vide() {
         let backend = draw(&state(Document::from_text(None, "")));
         insta::assert_snapshot!(backend);
-        assert_eq!(backend.cursor_position(), Position::new(36, 1));
+        assert_eq!(backend.cursor_position(), Position::new(37, 1));
     }
 
     #[test]
@@ -493,7 +503,7 @@ mod tests {
         let backend = draw(&state(doc));
         insta::assert_snapshot!(backend);
         // "\t// 🦀" : tab (4) + "// " (3) + 🦀 (2) = colonne 9.
-        assert_eq!(backend.cursor_position(), Position::new(36 + 9, 3));
+        assert_eq!(backend.cursor_position(), Position::new(37 + 9, 3));
     }
 
     #[test]
@@ -561,8 +571,8 @@ mod tests {
         assert_eq!(s("abc\n", 1, 10), "bc");
     }
 
-    /// Zone texte : x = 30 (explorateur) + 6 (gouttière), y = 1 (sous la barre d'onglets).
-    const X: u16 = 36;
+    /// Zone texte : x = 30 (explorateur) + 7 (gouttière), y = 1 (sous la barre d'onglets).
+    const X: u16 = 37;
     const Y: u16 = TAB_BAR_HEIGHT;
 
     fn selectionne(doc: Document, sel: Range<usize>, scroll_col: usize) -> TestBackend {
@@ -753,7 +763,7 @@ mod tests {
             .bg
             .expect("fond de la courante");
         for y in Y..22 {
-            for x in 0..44 {
+            for x in 0..43 {
                 assert_ne!(b.buffer()[(X + x, y)].bg, courante, "({x}, {y})");
             }
         }
@@ -1103,7 +1113,7 @@ mod tests {
         let b = draw(&s);
         insta::assert_snapshot!(b);
         // La zone texte perd la hauteur du panneau : 14 lignes, la dernière en écran 14.
-        assert_eq!(b.buffer()[(X - 3, 14)].symbol(), "4");
+        assert_eq!(b.buffer()[(X - 4, 14)].symbol(), "4");
         assert!(ligne(&b, 15)[..].contains("│ PROBLÈMES (3) ─"));
         let vide = draw(&State {
             problems_open: true,

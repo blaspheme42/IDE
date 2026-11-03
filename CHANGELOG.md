@@ -5,7 +5,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 ## [Non publié]
 
 ### Ajouté
-- Repli des blocs (selon l'indentation) : `Alt+-` replie le bloc du curseur, `Alt+=` le déplie, `Alt+_` / `Alt++` replient / déplient tout ; clic dans la gouttière pour basculer une ligne. Un bloc replié est marqué `▸` et `⋯`, les flèches le sautent, il se déplie si le curseur y arrive (recherche, F12, annuler).
+- Repli des blocs (selon l'indentation) : `Alt+-` replie le bloc du curseur, `Alt+=` le déplie, `Alt+_` / `Alt++` replient / déplient tout ; clic dans la gouttière pour basculer une ligne. La gouttière marque d'un `-` les blocs repliables et d'un `+` les blocs repliés (suivis de `⋯`), les flèches le sautent, il se déplie si le curseur y arrive (recherche, F12, annuler).
 - Paires automatiques : taper `(`, `[`, `{`, `"` ou `'` insère la fermante derrière le curseur ; taper la fermante déjà présente la saute, et `Retour arrière` entre une paire vide retire les deux. Guillemets seulement hors d'un mot (`l'arbre`) ; pas de `'` en Rust.
 - HTML et PHP : taper le `>` d'une balise ouvrante insère sa fermante (`<div>|</div>`), sauf éléments vides (`<br>`, `<img>`…) et `/>`.
 - Parenthèse, crochet ou accolade sous le curseur (ou juste avant) mis en surbrillance avec son vis-à-vis.
