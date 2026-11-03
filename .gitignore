@@ -1,3 +1,6 @@
 /target
-/.claude/worktrees/
+/.claude/
+# Bacs à sable locaux
 /TEST/
+/test.*
+/Test.*
