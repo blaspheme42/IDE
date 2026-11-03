@@ -234,7 +234,8 @@ mod tests {
     #[tokio::test]
     async fn ouverture_puis_indentation() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
-        let p = dir.path().join("a.txt");
+        // Chemin canonique, comme celui rendu : sur macOS `/var` est un lien vers `/private/var`.
+        let p = dir.path().canonicalize()?.join("a.txt");
         std::fs::write(&p, "salut")?;
         let evs = run(Command::OpenFile(p.clone()), 2).await;
         assert_eq!(

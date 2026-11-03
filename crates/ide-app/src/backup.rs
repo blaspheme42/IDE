@@ -162,9 +162,10 @@ fn identity() -> String {
 /// pid (version précédente, pid réutilisé) : morte.
 /// Linux : `/proc/<pid>` existe et sa date de démarrage est celle du verrou (verrou absent ou vide :
 /// en cours de création, vivante).
-/// Ailleurs : shortcut: vivante si son verrou a été touché il y a moins de 2 min (tick de 30 s) ; une
-/// machine en veille plus longtemps laisse une autre instance proposer ses copies. Passer à un vrai
-/// verrou de fichier (`File::lock`, Rust 1.89) quand la version minimale le permettra.
+/// Ailleurs : le processus existe (`kill -0`) et son verrou a été touché il y a moins de 2 min
+/// (tick de 30 s), ce qui écarte un pid réutilisé.
+/// shortcut: une machine en veille plus de 2 min laisse une autre instance proposer ses copies ;
+/// passer à un vrai verrou de fichier (`File::lock`, Rust 1.89) quand la version minimale le permettra.
 fn alive(dir: &Path) -> bool {
     let name = dir.file_name().and_then(|n| n.to_str());
     let Some(pid) = name.filter(|n| n.parse::<u32>().is_ok()) else {
@@ -181,10 +182,19 @@ fn alive(dir: &Path) -> bool {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = pid;
-        (std::fs::metadata(&lock).and_then(|m| m.modified()).ok())
-            .and_then(|t| t.elapsed().ok())
-            .is_some_and(|d| d < STALE)
+        // Pid hors des entiers positifs : `kill -0 -1` viserait tous les processus.
+        let exists = pid.parse::<i32>().is_ok_and(|p| p > 0)
+            && std::process::Command::new("kill")
+                .args(["-0", pid])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                // Sans commande `kill` (Windows) : on s'en tient au verrou.
+                .map_or(true, |s| s.success());
+        exists
+            && (std::fs::metadata(&lock).and_then(|m| m.modified()).ok())
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|d| d < STALE)
     }
 }
 
