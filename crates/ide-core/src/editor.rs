@@ -5,11 +5,15 @@ use crate::{
     editor_size, explorer, lsp, palette, search, tabs,
 };
 
-/// Colonnes réservées par l'UI à gauche du texte : numéro (au moins 4 chiffres), espace,
-/// marque de repli (`-` / `+`), colonne de diagnostics.
-pub fn gutter_width(doc: &Document) -> u16 {
-    let digits = doc.rope().len_lines().to_string().len().max(4);
-    u16::try_from(digits + 3).unwrap_or(u16::MAX)
+/// Colonnes réservées par l'UI à gauche du texte : marque git, numéro (au moins 4 chiffres) et espace
+/// si `line_numbers`, marque de repli (`-` / `+`), colonne de diagnostics.
+pub fn gutter_width(state: &State) -> u16 {
+    let numbers = if state.settings.line_numbers {
+        state.doc.rope().len_lines().to_string().len().max(4) + 1
+    } else {
+        0
+    };
+    u16::try_from(numbers + 3).unwrap_or(u16::MAX)
 }
 
 /// Lignes défilées par cran de molette.
@@ -46,6 +50,13 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         }
         Event::GitBranch(branch) => {
             state.git_branch = branch;
+            vec![]
+        }
+        Event::GitBase { path, base } => {
+            match base {
+                Some(b) => state.git_bases.insert(path, b),
+                None => state.git_bases.remove(&path),
+            };
             vec![]
         }
         Event::Diagnostics { path, items } => {
@@ -216,7 +227,7 @@ pub(crate) fn save_command(doc: &mut Document, path: std::path::PathBuf) -> Comm
 }
 
 fn mouse(state: &mut State, m: MouseInput) {
-    let left = crate::explorer_width(state) + gutter_width(&state.doc);
+    let left = crate::explorer_width(state) + gutter_width(state);
     // Ligne 0 : onglets, puis le bandeau de copie de secours s'il est affiché, puis le texte.
     let top = TAB_BAR_HEIGHT + crate::banner_height(state);
     let bottom = top + editor_size(state).1;
@@ -429,6 +440,16 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
             }
             Key::Char('_' | '-') => doc.fold_all(),
             Key::Char('+' | '=') => doc.unfold_all(),
+            Key::Char('l' | 'L') => state.settings.line_numbers ^= true,
+            Key::Char('t' | 'T') => {
+                // Thème inconnu (rendu en sombre) : comme le premier.
+                let i = crate::THEMES
+                    .iter()
+                    .position(|t| *t == state.settings.theme);
+                let next = crate::THEMES[(i.unwrap_or(0) + 1) % crate::THEMES.len()];
+                state.settings.theme = next.into();
+                state.status = format!("Thème : {next}");
+            }
             _ => state.status = k.to_string(),
         }
         return vec![];
@@ -482,7 +503,7 @@ fn scroll_to_cursor(state: &mut State) {
     let (line, col) = state.doc.cursor_line_col();
     let (w, h) = editor_size(state);
     let h = usize::from(h).max(1);
-    let w = usize::from(w.saturating_sub(gutter_width(&state.doc))).max(1);
+    let w = usize::from(w.saturating_sub(gutter_width(state))).max(1);
     // En lignes visibles : un bloc replié n'occupe qu'une rangée.
     let doc = &state.doc;
     let top = doc.step_visible(state.scroll_line, 0, false);
@@ -766,7 +787,7 @@ mod tests {
 
     #[test]
     fn scroll_suit_le_curseur() {
-        // Zone : 40-30 = 10 colonnes, moins 6 de gouttière = 4 ; 7-1-1 = 5 lignes (statut, onglets).
+        // Zone : 40-30 = 10 colonnes, moins 8 de gouttière = 2 ; 7-1-1 = 5 lignes (statut, onglets).
         let mut s = opened(&"l\n".repeat(20));
         for _ in 0..7 {
             update(&mut s, k(Key::Down));
@@ -781,9 +802,9 @@ mod tests {
         for c in "中文ab".chars() {
             update(&mut s, k(Key::Char(c)));
         }
-        // Idéogrammes = 2 colonnes : curseur en colonne 6, 3 colonnes visibles.
+        // Idéogrammes = 2 colonnes : curseur en colonne 6, 2 colonnes visibles.
         assert_eq!(s.doc.cursor_line_col().1, 6);
-        assert_eq!(s.scroll_col, 4);
+        assert_eq!(s.scroll_col, 5);
         update(&mut s, k(Key::Home));
         assert_eq!(s.scroll_col, 0);
     }
@@ -884,15 +905,55 @@ mod tests {
 
     #[test]
     fn gouttiere_s_elargit_au_dela_de_9999_lignes() {
-        assert_eq!(gutter_width(&Document::default()), 7);
-        assert_eq!(
-            gutter_width(&Document::from_text(None, &"\n".repeat(9_998))),
-            7
-        );
-        assert_eq!(
-            gutter_width(&Document::from_text(None, &"\n".repeat(9_999))),
-            8
-        );
+        let w = |text: &str| gutter_width(&opened(text));
+        assert_eq!(w(""), 8);
+        assert_eq!(w(&"\n".repeat(9_998)), 8);
+        assert_eq!(w(&"\n".repeat(9_999)), 9);
+    }
+
+    #[test]
+    fn numeros_de_ligne_masques_alt_l() {
+        let alt_l = Event::Key(KeyInput {
+            key: Key::Char('l'),
+            mods: Modifiers {
+                alt: true,
+                ..Modifiers::default()
+            },
+        });
+        let mut s = opened("abc\ndef\n");
+        update(&mut s, alt_l.clone());
+        assert!(!s.settings.line_numbers);
+        // Plus que marque git, repli et diagnostics : le texte commence en 30 + 3.
+        assert_eq!(gutter_width(&s), 3);
+        update(&mut s, souris(MouseKind::Down, 34, 2));
+        assert_eq!(s.doc.cursor_line_col(), (1, 1));
+        // Clic dans la gouttière : repli, pas de déplacement du curseur.
+        update(&mut s, souris(MouseKind::Down, 32, 1));
+        assert_eq!(s.doc.cursor_line_col(), (1, 1));
+        update(&mut s, alt_l.clone());
+        assert_eq!(gutter_width(&s), 8);
+    }
+
+    #[test]
+    fn alt_t_passe_au_theme_suivant() {
+        let alt_t = Event::Key(KeyInput {
+            key: Key::Char('t'),
+            mods: Modifiers {
+                alt: true,
+                ..Modifiers::default()
+            },
+        });
+        let mut s = opened("");
+        let mut vus = vec![];
+        for _ in 0..crate::THEMES.len() {
+            update(&mut s, alt_t.clone());
+            vus.push(s.settings.theme.clone());
+        }
+        assert_eq!(vus, ["light", "gruvbox", "solarized-light", "dark"]);
+        assert_eq!(s.status, "Thème : dark");
+        s.settings.theme = "inconnu".into();
+        update(&mut s, alt_t.clone());
+        assert_eq!(s.settings.theme, "light");
     }
 
     #[test]
@@ -959,11 +1020,11 @@ mod tests {
     fn glisser_commence_hors_du_texte_ignore() {
         let mut s = opened("abcdef");
         update(&mut s, souris(MouseKind::Down, 5, 1));
-        update(&mut s, souris(MouseKind::Drag, 39, 1));
+        update(&mut s, souris(MouseKind::Drag, 40, 1));
         assert_eq!((s.doc.cursor(), s.doc.selection()), (0, None));
-        update(&mut s, souris(MouseKind::Down, 37, 1));
-        update(&mut s, souris(MouseKind::Up, 37, 1));
-        update(&mut s, souris(MouseKind::Drag, 39, 1));
+        update(&mut s, souris(MouseKind::Down, 38, 1));
+        update(&mut s, souris(MouseKind::Up, 38, 1));
+        update(&mut s, souris(MouseKind::Drag, 40, 1));
         assert_eq!(s.doc.selection(), None);
     }
 
@@ -1004,35 +1065,35 @@ mod tests {
 
     #[test]
     fn souris_clic_glisser_defilement() {
-        // Texte à partir de la colonne 30 + 7 = 37 ; 5 lignes visibles, à partir de la ligne 1 (onglets en 0).
+        // Texte à partir de la colonne 30 + 8 = 38 ; 5 lignes visibles, à partir de la ligne 1 (onglets en 0).
         let mut s = opened("abc\nd中e\n");
-        update(&mut s, souris(MouseKind::Down, 38, 1));
+        update(&mut s, souris(MouseKind::Down, 39, 1));
         assert_eq!(s.doc.cursor(), 1);
-        update(&mut s, souris(MouseKind::Drag, 39, 2)); // colonne 2 = milieu de 中 : avant
+        update(&mut s, souris(MouseKind::Drag, 40, 2)); // colonne 2 = milieu de 中 : avant
         assert_eq!(s.doc.selection(), Some(1..5));
-        update(&mut s, souris(MouseKind::Up, 39, 2));
+        update(&mut s, souris(MouseKind::Up, 40, 2));
         assert_eq!(s.doc.selection(), Some(1..5));
         // Au-delà de la fin de ligne, puis au-delà du document.
-        update(&mut s, souris(MouseKind::Down, 40, 1));
+        update(&mut s, souris(MouseKind::Down, 41, 1));
         assert_eq!((s.doc.cursor(), s.doc.selection()), (3, None));
-        update(&mut s, souris(MouseKind::Down, 51, 5));
+        update(&mut s, souris(MouseKind::Down, 52, 5));
         assert_eq!(s.doc.cursor(), 8);
         // Clic dans l'explorateur, la barre d'onglets hors onglet ou la barre de statut : ignoré.
         update(&mut s, souris(MouseKind::Down, 71, 0));
         update(&mut s, souris(MouseKind::Down, 5, 1));
-        update(&mut s, souris(MouseKind::Down, 38, 6));
+        update(&mut s, souris(MouseKind::Down, 39, 6));
         assert_eq!(s.doc.cursor(), 8);
         let mut s = opened(&"l\n".repeat(20));
-        update(&mut s, souris(MouseKind::ScrollDown, 38, 1));
-        update(&mut s, souris(MouseKind::ScrollDown, 38, 1));
+        update(&mut s, souris(MouseKind::ScrollDown, 39, 1));
+        update(&mut s, souris(MouseKind::ScrollDown, 39, 1));
         assert_eq!((s.scroll_line, s.doc.cursor()), (6, 0));
         for _ in 0..10 {
-            update(&mut s, souris(MouseKind::ScrollDown, 38, 1));
+            update(&mut s, souris(MouseKind::ScrollDown, 39, 1));
         }
         assert_eq!(s.scroll_line, 20);
-        update(&mut s, souris(MouseKind::ScrollUp, 38, 1));
+        update(&mut s, souris(MouseKind::ScrollUp, 39, 1));
         assert_eq!(s.scroll_line, 17);
-        update(&mut s, souris(MouseKind::Down, 37, 2));
+        update(&mut s, souris(MouseKind::Down, 38, 2));
         assert_eq!(s.doc.cursor_line_col(), (18, 0));
     }
 

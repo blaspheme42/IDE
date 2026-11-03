@@ -4,6 +4,11 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+### Ajouté
+- Marques git dans la gouttière, comme VS Code : barre verte (ligne ajoutée), bleue (modifiée) ou `▁` / `▔` rouge (lignes supprimées) en comparant le texte, même non sauvegardé, à la version de HEAD. HEAD relu à l'ouverture, après chaque sauvegarde et à chaque changement sous la racine (branche, checkout). Fichier non suivi : tout est ajouté ; fichier ignoré, hors dépôt ou sans git : aucune marque.
+- `line_numbers = false` dans `[editor]` masque les numéros de ligne ; `Alt+L` ou la palette (« Affichage : afficher / masquer les numéros de ligne ») les bascule à chaud.
+- Thèmes `gruvbox` (sombre) et `solarized-light` (clair) en plus de `dark` et `light` ; `Alt+T` ou la palette (« Affichage : changer de thème ») passe au suivant à chaud.
+
 ## [1.1.0] — 2026-11-03 · Langages web et confort d'édition
 
 ### Ajouté

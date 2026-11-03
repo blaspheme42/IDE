@@ -1,10 +1,10 @@
 ---
 source: crates/ide-ui/src/lib.rs
-assertion_line: 470
+assertion_line: 492
 expression: backend
 ---
 "┌ EXPLORATEUR ───────────────┐ [sans nom] ×                                     "
-"│                            │   1                                              "
+"│                            │    1                                             "
 "│                            │                                                  "
 "│                            │                                                  "
 "│                            │                                                  "

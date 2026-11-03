@@ -17,10 +17,11 @@
 - **Explorer**: file tree with icons, respects `.gitignore`. Create, rename, move, or delete (to the trash). Refreshes when files change on disk.
 - **Editor**: unlimited undo/redo, mouse selection, system clipboard (internal fallback over SSH). Keeps LF/CRLF line endings. Indentation from `.editorconfig`.
 - **Editing helpers**: auto-closing `()` `[]` `{}` `""` `''`, bracket matching, HTML tag auto-closing, Emmet, and indentation-based code folding.
+- **Git gutter**: like VS Code, a colored bar at the start of the gutter marks lines added (green), modified (blue), or deleted (red `▁` / `▔`) since the last commit, updated as you type. Untracked files show as all added; nothing outside a git repository.
 - **Search**: find and replace in the current file, with regex and capture groups.
 - **Language servers**: completion, hover, go-to-definition, diagnostics, and formatting (also on save). Servers start automatically when installed. A missing or crashed server never blocks editing.
 - **Syntax highlighting** (tree-sitter): Rust, C, Python, JavaScript, TypeScript (and TSX), HTML, CSS, JSON, TOML, Markdown, PHP.
-- **Tabs, fuzzy file picker, command palette**, dark and light themes, configurable key bindings.
+- **Tabs, fuzzy file picker, command palette**, four themes (`dark`, `light`, `gruvbox`, `solarized-light`), configurable key bindings.
 - **Safety**: backup copies of unsaved work, restored after a crash. Session (open tabs, cursor positions) restored on restart.
 
 ## Installation
@@ -107,6 +108,7 @@ cargo install --path crates/ide-app --locked
 | `Ctrl+F` / `Ctrl+H` | Find / replace (`F3` next, `Alt+Enter` replace all, `Alt+R` regex, `Alt+C` match case) |
 | `Alt+-` / `Alt+=` | Fold / unfold the block at the cursor (or click `-` / `+` in the gutter) |
 | `Alt+_` / `Alt++` | Fold / unfold everything |
+| `Alt+L` / `Alt+T` | Show / hide line numbers, switch to the next theme |
 | `Ctrl+Space` | Completion (also appears as you type) |
 | `Ctrl+K` / `F12` | Hover info / go to definition |
 | `Alt+Shift+F` | Format the file (also `Ctrl+0` in kitty, WezTerm, foot, Ghostty, Alacritty) |
@@ -124,7 +126,8 @@ When a file changes on disk, IDE reloads it if you have no unsaved changes. Othe
 
 ```toml
 [editor]
-theme = "dark"          # dark | light
+theme = "dark"          # dark | light | gruvbox | solarized-light
+line_numbers = true     # line numbers in the gutter
 tab_size = 4            # when no .editorconfig applies
 insert_spaces = true
 format_on_save = true   # format with the language server on Ctrl+S
@@ -165,7 +168,7 @@ The full specification (in French) is in [CAHIER_DES_CHARGES.md](CAHIER_DES_CHAR
 
 ## Roadmap
 
-Multi-cursor editing, split view, rename symbol, find references, project-wide search, integrated terminal, git status colors.
+Multi-cursor editing, split view, rename symbol, find references, project-wide search, integrated terminal, git status colors in the explorer.
 
 ## License
 

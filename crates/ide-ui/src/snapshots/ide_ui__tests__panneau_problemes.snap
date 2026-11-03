@@ -1,23 +1,23 @@
 ---
 source: crates/ide-ui/src/lib.rs
-assertion_line: 1114
+assertion_line: 1119
 expression: b
 ---
 "┌ P ─────────────────────────┐ a.rs ×                                           "
-"│(dossier vide)              │   1  ⚠let x = io::st;                            "
-"│                            │   2   let x = io::st;                            "
-"│                            │   3   let x = io::st;                            "
-"│                            │   4  ✖let x = io::st;                            "
-"│                            │   5   let x = io::st;                            "
-"│                            │   6   let x = io::st;                            "
-"│                            │   7   let x = io::st;                            "
-"│                            │   8   let x = io::st;                            "
-"│                            │   9   let x = io::st;                            "
-"│                            │  10   let x = io::st;                            "
-"│                            │  11   let x = io::st;                            "
-"│                            │  12   let x = io::st;                            "
-"│                            │  13   let x = io::st;                            "
-"│                            │  14   let x = io::st;                            "
+"│(dossier vide)              │    1  ⚠let x = io::st;                           "
+"│                            │    2   let x = io::st;                           "
+"│                            │    3   let x = io::st;                           "
+"│                            │    4  ✖let x = io::st;                           "
+"│                            │    5   let x = io::st;                           "
+"│                            │    6   let x = io::st;                           "
+"│                            │    7   let x = io::st;                           "
+"│                            │    8   let x = io::st;                           "
+"│                            │    9   let x = io::st;                           "
+"│                            │   10   let x = io::st;                           "
+"│                            │   11   let x = io::st;                           "
+"│                            │   12   let x = io::st;                           "
+"│                            │   13   let x = io::st;                           "
+"│                            │   14   let x = io::st;                           "
 "│                            │ PROBLÈMES (3) ───────────────────────────────────"
 "│                            │ ● /ailleurs/b.rs:10:1  problème 9:0              "
 "│                            │ ✖ src/a.rs:4:13  problème 3:12                   "

@@ -106,11 +106,14 @@ fn apply_file(s: &mut Settings, path: &Path, trusted: bool, errors: &mut Vec<Str
 fn editor_key(s: &mut Settings, key: &str, v: &Value) -> Result<(), String> {
     match key {
         "theme" => match str_of(v)? {
-            t @ ("dark" | "light") => s.theme = t.into(),
+            t if ide_core::THEMES.contains(&t) => s.theme = t.into(),
             t if t.ends_with(".toml") || t.contains('/') => {
                 return Err("thème personnalisé pas encore pris en charge".into());
             }
-            _ => return Err("attendu \"dark\", \"light\" ou un chemin de thème".into()),
+            _ => {
+                let names = ide_core::THEMES.map(|t| format!("\"{t}\"")).join(", ");
+                return Err(format!("attendu {names} ou un chemin de thème"));
+            }
         },
         "tab_size" => {
             let n = int_in(v, 1, 16)? as usize;
@@ -119,6 +122,7 @@ fn editor_key(s: &mut Settings, key: &str, v: &Value) -> Result<(), String> {
         }
         "insert_spaces" => s.indent.use_tabs = !bool_of(v)?,
         "format_on_save" => s.format_on_save = bool_of(v)?,
+        "line_numbers" => s.line_numbers = bool_of(v)?,
         "icons" => match str_of(v)? {
             "nerd" => s.nerd_icons = true,
             "ascii" => s.nerd_icons = false,
@@ -240,6 +244,23 @@ mod tests {
         );
         assert!(!s.nerd_icons);
         assert_eq!((s.explorer_width, s.show_hidden), (40, true));
+        Ok(())
+    }
+
+    #[test]
+    fn numeros_de_ligne_et_themes() -> Result<()> {
+        assert!(Settings::default().line_numbers);
+        let (s, errors) = load(Some("[editor]\nline_numbers = false\n"), None)?;
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!s.line_numbers);
+        for t in ide_core::THEMES {
+            let (s, errors) = load(Some(&format!("[editor]\ntheme = \"{t}\"\n")), None)?;
+            assert!(errors.is_empty(), "{errors:?}");
+            assert_eq!(s.theme, t);
+        }
+        let (s, errors) = load(Some("[editor]\ntheme = \"monokai\"\n"), None)?;
+        assert_eq!(s.theme, "dark");
+        assert!(errors[0].contains("\"solarized-light\""), "{errors:?}");
         Ok(())
     }
 

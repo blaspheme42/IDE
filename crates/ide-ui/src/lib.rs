@@ -7,8 +7,8 @@ mod palette;
 pub mod theme;
 
 use ide_core::{
-    LineEnding, Search, State, TAB_BAR_HEIGHT, banner_height, explorer_width, gutter_width,
-    search_bar_height, tab_label, tab_list, tab_scroll,
+    GitMark, LineEnding, Search, State, TAB_BAR_HEIGHT, banner_height, explorer_width,
+    gutter_width, search_bar_height, tab_label, tab_list, tab_scroll,
 };
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
@@ -56,11 +56,9 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         Constraint::Length(problems_h),
     ])
     .areas(editor);
-    let [gutter, text] = Layout::horizontal([
-        Constraint::Length(gutter_width(&state.doc)),
-        Constraint::Min(0),
-    ])
-    .areas(editor);
+    let [gutter, text] =
+        Layout::horizontal([Constraint::Length(gutter_width(state)), Constraint::Min(0)])
+            .areas(editor);
 
     if explorer.width > 0 {
         explorer::render(state, frame, explorer, theme);
@@ -123,17 +121,21 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
                 Style::new().fg(lsp::color(*sev, theme)),
             )
         });
-        // Gouttière : numéro aligné à droite, espace, marque de repli, colonne de diagnostics.
-        numbers.push(Line::from(vec![
-            Span::styled(
-                format!(
-                    "{:>w$}",
-                    i + 1,
-                    w = usize::from(gutter.width).saturating_sub(3)
-                ),
-                style,
-            ),
-            Span::raw(" "),
+        // Gouttière : marque git, numéro aligné à droite et espace (s'ils sont affichés), marque de
+        // repli, colonne de diagnostics.
+        let (bar, color) = match state.git_marks.get(i).copied().flatten() {
+            None => (" ", theme.gutter),
+            Some(GitMark::Added) => ("▎", theme.git_added),
+            Some(GitMark::Modified) => ("▎", theme.git_modified),
+            Some(GitMark::DeletedBelow) => ("▁", theme.git_deleted),
+            Some(GitMark::DeletedAbove) => ("▔", theme.git_deleted),
+        };
+        let mut row = vec![Span::styled(bar, Style::new().fg(color))];
+        if state.settings.line_numbers {
+            let w = usize::from(gutter.width).saturating_sub(4);
+            row.push(Span::styled(format!("{:>w$} ", i + 1), style));
+        }
+        row.extend([
             Span::styled(
                 if folded {
                     "+"
@@ -145,7 +147,8 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
                 style,
             ),
             marker,
-        ]));
+        ]);
+        numbers.push(Line::from(row));
         // Sélection ramenée en index de char relatifs à la ligne (vide si hors ligne).
         let sel = selection.as_ref().map_or(0..0, rel);
         // Occurrences touchant la ligne : triées, la première trouvée par recherche binaire.
@@ -475,7 +478,7 @@ mod tests {
         assert_eq!(b.buffer()[(31, 1)].fg, Theme::dark().warning);
         // Le texte commence une ligne plus bas, le curseur aussi.
         assert!(row(&b, 2).contains("1   un"), "{}", row(&b, 2));
-        assert_eq!(b.cursor_position(), Position::new(37, 2));
+        assert_eq!(b.cursor_position(), Position::new(38, 2));
         s.backup_offer = None;
         let b = draw(&s);
         assert!(row(&b, 1).contains("1   un"), "{}", row(&b, 1));
@@ -485,7 +488,7 @@ mod tests {
     fn document_vide() {
         let backend = draw(&state(Document::from_text(None, "")));
         insta::assert_snapshot!(backend);
-        assert_eq!(backend.cursor_position(), Position::new(37, 1));
+        assert_eq!(backend.cursor_position(), Position::new(38, 1));
     }
 
     #[test]
@@ -503,7 +506,7 @@ mod tests {
         let backend = draw(&state(doc));
         insta::assert_snapshot!(backend);
         // "\t// 🦀" : tab (4) + "// " (3) + 🦀 (2) = colonne 9.
-        assert_eq!(backend.cursor_position(), Position::new(37 + 9, 3));
+        assert_eq!(backend.cursor_position(), Position::new(38 + 9, 3));
     }
 
     #[test]
@@ -571,8 +574,8 @@ mod tests {
         assert_eq!(s("abc\n", 1, 10), "bc");
     }
 
-    /// Zone texte : x = 30 (explorateur) + 7 (gouttière), y = 1 (sous la barre d'onglets).
-    const X: u16 = 37;
+    /// Zone texte : x = 30 (explorateur) + 8 (gouttière), y = 1 (sous la barre d'onglets).
+    const X: u16 = 38;
     const Y: u16 = TAB_BAR_HEIGHT;
 
     fn selectionne(doc: Document, sel: Range<usize>, scroll_col: usize) -> TestBackend {
@@ -636,8 +639,8 @@ mod tests {
         assert_eq!(bg(X, 0), t.background);
         assert_eq!(b.buffer()[(X, Y)].fg, t.foreground);
         // Numéros de ligne : courant au style dédié, les autres en couleur de gouttière.
-        assert!(a_style(&b.buffer()[(33, Y + 1)], t.gutter_current));
-        assert_eq!(b.buffer()[(33, Y)].fg, t.gutter);
+        assert!(a_style(&b.buffer()[(34, Y + 1)], t.gutter_current));
+        assert_eq!(b.buffer()[(34, Y)].fg, t.gutter);
     }
 
     #[test]
@@ -694,7 +697,7 @@ mod tests {
         assert!(line.contains("5/120"));
         // La zone de texte s'arrête au-dessus : 21 lignes visibles, sous la barre d'onglets.
         assert_eq!(b.buffer()[(0, 21)].symbol(), "│");
-        assert_eq!(b.buffer()[(33, 21)].symbol(), "1");
+        assert_eq!(b.buffer()[(34, 21)].symbol(), "1");
     }
 
     #[test]
@@ -763,7 +766,7 @@ mod tests {
             .bg
             .expect("fond de la courante");
         for y in Y..22 {
-            for x in 0..43 {
+            for x in 0..42 {
                 assert_ne!(b.buffer()[(X + x, y)].bg, courante, "({x}, {y})");
             }
         }
@@ -979,6 +982,38 @@ mod tests {
         let b = draw(&s);
         assert_eq!(g(&b, 0).symbol(), "E");
         assert_eq!(g(&b, 1).symbol(), "i");
+    }
+
+    #[test]
+    fn marques_git_suivent_le_repli_et_sans_numeros() {
+        let mut s = state(Document::from_text(
+            Some("a.rs".into()),
+            "fn a() {\n    x();\n}\nb\nc\n",
+        ));
+        s.git_marks = vec![
+            Some(GitMark::Modified),
+            Some(GitMark::Added),
+            None,
+            Some(GitMark::DeletedBelow),
+            Some(GitMark::DeletedAbove),
+        ];
+        let t = Theme::dark();
+        let g = |b: &TestBackend, y| b.buffer()[(30, Y + y)].clone();
+        let b = draw(&s);
+        assert_eq!((g(&b, 0).symbol(), g(&b, 0).fg), ("▎", t.git_modified));
+        assert_eq!((g(&b, 1).symbol(), g(&b, 1).fg), ("▎", t.git_added));
+        assert_eq!(g(&b, 2).symbol(), " ");
+        assert_eq!((g(&b, 3).symbol(), g(&b, 3).fg), ("▁", t.git_deleted));
+        assert_eq!(g(&b, 4).symbol(), "▔");
+        // Corps du bloc replié (ligne 1, ajoutée) masqué : `}` puis `b` et sa marque remontent d'une rangée.
+        s.doc.toggle_fold(0);
+        s.settings.line_numbers = false;
+        let b = draw(&s);
+        assert_eq!(g(&b, 1).symbol(), " ");
+        assert_eq!(g(&b, 2).symbol(), "▁");
+        // Sans numéros : marque git, repli, diagnostic, puis le texte.
+        let row: String = (30..36).map(|x| b.buffer()[(x, Y)].symbol()).collect();
+        assert_eq!(row, "▎+ fn ");
     }
 
     fn item(label: &str, kind: &str, detail: Option<&str>) -> CompletionItem {

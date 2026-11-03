@@ -3,6 +3,7 @@
 mod backup;
 mod clipboard;
 mod files;
+mod git;
 mod highlight;
 mod lsp;
 mod session;
@@ -193,6 +194,8 @@ async fn run(
 
     let mut highlighter = highlight::Highlighter::default();
     highlighter.sync(&mut state);
+    let mut git = git::GitMarks::default();
+    git.sync(&mut state, &tx);
     let mut lsp = lsp::LspManager::new(tx.clone(), root.clone(), state.settings.lsp.clone());
     lsp.sync(&state);
     terminal.draw(|f| ide_ui::render(&state, f))?;
@@ -266,6 +269,7 @@ async fn run(
                 Event::Saved { path, .. } => Some(path.clone()),
                 _ => None,
             };
+            git.on_event(&ev);
             let cmds = ide_core::update(&mut state, ev);
             // didChange de la version éditée avant toute requête LSP qui la vise.
             lsp.sync(&state);
@@ -319,6 +323,7 @@ async fn run(
                 break;
             }
             highlighter.sync(&mut state);
+            git.sync(&mut state, &tx);
             terminal.draw(|f| ide_ui::render(&state, f))?;
         }
         anyhow::Ok(())

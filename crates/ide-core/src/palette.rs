@@ -132,6 +132,12 @@ static COMMANDS: &[CommandInfo] = &[
             },
         },
     ),
+    cmd(
+        "toggle_line_numbers",
+        "Affichage : afficher / masquer les numéros de ligne",
+        alt('l'),
+    ),
+    cmd("next_theme", "Affichage : changer de thème", alt('t')),
     cmd("fold", "Code : replier le bloc", alt('-')),
     cmd("unfold", "Code : déplier le bloc", alt('=')),
     cmd("fold_all", "Code : tout replier", alt('_')),

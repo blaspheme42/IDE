@@ -166,6 +166,12 @@ pub enum Event {
     FileList(Vec<PathBuf>),
     /// Branche git courante (`None` : pas de dépôt, ou HEAD détachée → l'app envoie le commit court).
     GitBranch(Option<String>),
+    /// Texte de `path` dans HEAD, pour les marques git de la gouttière : `None` = pas de marques
+    /// (hors dépôt, git absent), `Some("")` = fichier non suivi (tout est ajouté).
+    GitBase {
+        path: PathBuf,
+        base: Option<String>,
+    },
     /// Configuration chargée au démarrage ; `errors` : problèmes à signaler sans bloquer (clé inconnue, TOML invalide…).
     ConfigLoaded {
         settings: Settings,
@@ -249,11 +255,27 @@ pub enum Command {
     DiscardBackup(PathBuf),
 }
 
+/// Thèmes embarqués, dans l'ordre de « Changer de thème » ; le premier est le défaut.
+pub const THEMES: [&str; 4] = ["dark", "light", "gruvbox", "solarized-light"];
+
+/// Marque git d'une ligne dans la gouttière, par rapport à HEAD.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitMark {
+    Added,
+    Modified,
+    /// Lignes supprimées juste avant celle-ci (seulement en tête de fichier).
+    DeletedAbove,
+    /// Lignes supprimées juste après celle-ci.
+    DeletedBelow,
+}
+
 /// Réglages lus dans `config.toml` (utilisateur puis projet) par l'app ; chaque clé a un défaut.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    /// `"dark"` ou `"light"`.
+    /// Un des `THEMES`.
     pub theme: String,
+    /// Numéros de ligne dans la gouttière (`[editor] line_numbers`).
+    pub line_numbers: bool,
     /// Icônes Nerd Font (`false` = repli ASCII, NF-12).
     pub nerd_icons: bool,
     /// Indentation par défaut, quand aucun `.editorconfig` ne s'applique.
@@ -271,7 +293,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            theme: "dark".into(),
+            theme: THEMES[0].into(),
+            line_numbers: true,
             nerd_icons: true,
             indent: Indent::default(),
             explorer_width: 30,
@@ -342,6 +365,10 @@ pub struct State {
     /// Coloration des lignes visibles du document actif, calculée par l'app avant chaque rendu :
     /// plages en OCTETS de la rope, triées, sans chevauchement, et catégorie (`"keyword"`, `"string"`…).
     pub highlights: Vec<(std::ops::Range<usize>, &'static str)>,
+    /// Texte dans HEAD des fichiers ouverts suivis par git (`Event::GitBase`) ; absent = pas de marques.
+    pub git_bases: std::collections::HashMap<PathBuf, String>,
+    /// Marques git par ligne du document actif, calculées par l'app avant chaque rendu (vide = aucune).
+    pub git_marks: Vec<Option<GitMark>>,
     pub focus: Focus,
     /// Fichier modifié à la fois dans l'onglet et sur le disque : chemin et texte disque proposé
     /// (Alt+R recharge, Alt+K garde la version de l'éditeur).
