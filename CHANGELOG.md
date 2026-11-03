@@ -9,12 +9,15 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 - Vue : les fichiers `.vue` sont traités comme du HTML (coloration, serveur HTML, Emmet).
 - `F1` ouvre l'écran d'aide : tous les raccourcis groupés (fichiers, édition, recherche, repliage, code, onglets, explorateur, panneaux), défilé par les flèches, `Page préc.` / `Page suiv.` ou la molette, fermé par `Échap` ou `F1` ; aussi « Aide : raccourcis clavier » dans la palette de commandes.
 - Barre de statut : `F1 Raccourcis` toujours affiché en couleur d'accent, nom du dossier du projet avant la branche, et `Échap/Ctrl+E : retour au code` quand l'explorateur a le focus.
+- Marques git dans la gouttière, comme VS Code : barre verte (ligne ajoutée), bleue (modifiée) ou `▁` / `▔` rouge (lignes supprimées) en comparant le texte, même non sauvegardé, à la version de HEAD. HEAD relu à l'ouverture, après chaque sauvegarde et à chaque changement sous la racine (branche, checkout). Fichier non suivi : tout est ajouté ; fichier ignoré, hors dépôt ou sans git : aucune marque.
+- `line_numbers = false` dans `[editor]` masque les numéros de ligne ; `Alt+L` ou la palette (« Affichage : afficher / masquer les numéros de ligne ») les bascule à chaud.
+- Thèmes `gruvbox` (sombre) et `solarized-light` (clair) en plus de `dark` et `light` ; `Alt+T` ou la palette (« Affichage : changer de thème ») passe au suivant à chaud.
 
 ### Modifié
 - `F1` n'ouvre plus la palette de commandes : `Ctrl+Shift+P`, ou `Ctrl+P` puis `>` (comme VSCode) dans les terminaux qui confondent `Ctrl+Shift+P` et `Ctrl+P`.
 
 ### Corrigé
-- Mise en page HTML, CSS et JSON : les serveurs vscode-*-language-server reçoivent `provideFormatter`, sans quoi ils n'annoncent pas la mise en page.
+- Mise en page : un message s'affiche quand aucun serveur de langage n'est disponible pour le fichier, au lieu de ne rien faire. Les serveurs vscode-*-language-server reçoivent aussi `provideFormatter`, pour annoncer la mise en page.
 
 ## [1.1.0] — 2026-11-03 · Langages web et confort d'édition
 

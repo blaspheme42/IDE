@@ -43,6 +43,10 @@ pub struct Theme {
     pub error: Color,
     pub warning: Color,
     pub muted: Color,
+    /// Marques git de la gouttière : lignes ajoutées, modifiées, supprimées.
+    pub git_added: Color,
+    pub git_modified: Color,
+    pub git_deleted: Color,
     /// Couleur par catégorie de coloration, indexée par le nom de catégorie en minuscules (`keyword`, `function`…).
     syntax: Vec<(&'static str, Style)>,
 }
@@ -71,6 +75,9 @@ impl Theme {
             error: hex(0xf48771),
             warning: hex(0xcca700),
             muted: hex(0x808080),
+            git_added: hex(0x81b88b),
+            git_modified: hex(0x4fa7e6),
+            git_deleted: hex(0xf14c4c),
             syntax: vec![
                 ("keyword", fg(0x569cd6)),
                 ("function", fg(0xdcdcaa)),
@@ -119,6 +126,9 @@ impl Theme {
             error: hex(0xe51400),
             warning: hex(0x9a6700),
             muted: hex(0x6e6e6e),
+            git_added: hex(0x48985d),
+            git_modified: hex(0x2090d3),
+            git_deleted: hex(0xe51400),
             syntax: vec![
                 ("keyword", fg(0x0000ff)),
                 ("function", fg(0x795e26)),
@@ -144,11 +154,116 @@ impl Theme {
         }
     }
 
-    /// Thème embarqué par son nom : `"dark"` ou `"light"`.
+    /// Thème sombre « Gruvbox » (palette de Pavel Pertsev, licence MIT).
+    pub fn gruvbox() -> Self {
+        Self {
+            name: "gruvbox",
+            background: hex(0x282828),
+            foreground: hex(0xebdbb2),
+            current_line: hex(0x32302f),
+            selection: bg(0x504945),
+            search_match: bg(0x665c54).add_modifier(Modifier::UNDERLINED),
+            search_current: fg(0x282828).bg(hex(0xfabd2f)),
+            bracket_match: bg(0x665c54).add_modifier(Modifier::BOLD),
+            gutter: hex(0x928374),
+            gutter_current: fg(0xfabd2f).add_modifier(Modifier::BOLD),
+            border: hex(0x504945),
+            border_focus: fg(0x83a598).add_modifier(Modifier::BOLD),
+            explorer_selected: fg(0xfbf1c7).bg(hex(0x504945)),
+            explorer_selected_unfocused: bg(0x3c3836),
+            tab_active: fg(0xfbf1c7).bg(hex(0x282828)).add_modifier(Modifier::BOLD),
+            tab_inactive: fg(0xa89984).bg(hex(0x1d2021)),
+            status_bar: fg(0x282828).bg(hex(0xa89984)),
+            error: hex(0xfb4934),
+            warning: hex(0xfabd2f),
+            muted: hex(0x928374),
+            git_added: hex(0xb8bb26),
+            git_modified: hex(0x83a598),
+            git_deleted: hex(0xfb4934),
+            syntax: vec![
+                ("keyword", fg(0xfb4934)),
+                ("function", fg(0xb8bb26)),
+                ("type", fg(0xfabd2f)),
+                ("string", fg(0xb8bb26)),
+                ("number", fg(0xd3869b)),
+                ("comment", fg(0x928374).add_modifier(Modifier::ITALIC)),
+                ("constant", fg(0xd3869b)),
+                ("variable", fg(0xebdbb2)),
+                ("property", fg(0x83a598)),
+                ("operator", fg(0xfe8019)),
+                ("punctuation", fg(0xa89984)),
+                ("attribute", fg(0x8ec07c)),
+                ("tag", fg(0x8ec07c)),
+                ("label", fg(0x83a598)),
+                ("namespace", fg(0x8ec07c)),
+                ("macro", fg(0x8ec07c)),
+                ("escape", fg(0xfe8019)),
+                ("heading", fg(0xb8bb26).add_modifier(Modifier::BOLD)),
+                ("link", fg(0x83a598).add_modifier(Modifier::UNDERLINED)),
+                ("emphasis", Style::new().add_modifier(Modifier::ITALIC)),
+            ],
+        }
+    }
+
+    /// Thème clair « Solarized Light » (palette d'Ethan Schoonover, licence MIT), accents un peu
+    /// assombris pour un contraste ≥ 3:1 sur le fond.
+    pub fn solarized_light() -> Self {
+        Self {
+            name: "solarized-light",
+            background: hex(0xfdf6e3),
+            foreground: hex(0x073642),
+            current_line: hex(0xeee8d5),
+            selection: bg(0xe0dccb),
+            search_match: bg(0xf2e6b6).add_modifier(Modifier::UNDERLINED),
+            search_current: fg(0xfdf6e3).bg(hex(0x8a6100)),
+            bracket_match: bg(0xd6d0bc).add_modifier(Modifier::BOLD),
+            gutter: hex(0x758587),
+            gutter_current: fg(0x586e75).add_modifier(Modifier::BOLD),
+            border: hex(0xd6d0bc),
+            border_focus: fg(0x2588cd).add_modifier(Modifier::BOLD),
+            explorer_selected: fg(0xfdf6e3).bg(hex(0x1b65a6)),
+            explorer_selected_unfocused: bg(0xeee8d5),
+            tab_active: fg(0x073642).bg(hex(0xfdf6e3)).add_modifier(Modifier::BOLD),
+            tab_inactive: fg(0x3f5157).bg(hex(0xeee8d5)),
+            status_bar: fg(0xfdf6e3).bg(hex(0x1b65a6)),
+            error: hex(0xdc322f),
+            warning: hex(0xa66d00),
+            muted: hex(0x768789),
+            git_added: hex(0x7a8c00),
+            git_modified: hex(0x2588cd),
+            git_deleted: hex(0xdc322f),
+            syntax: vec![
+                ("keyword", fg(0x7a8c00)),
+                ("function", fg(0x2588cd)),
+                ("type", fg(0xa67e00)),
+                ("string", fg(0x259088)),
+                ("number", fg(0xd33682)),
+                ("comment", fg(0x758587).add_modifier(Modifier::ITALIC)),
+                ("constant", fg(0xcb4b16)),
+                ("variable", fg(0x586e75)),
+                ("property", fg(0x2588cd)),
+                ("operator", fg(0x657b83)),
+                ("punctuation", fg(0x657b83)),
+                ("attribute", fg(0x6c71c4)),
+                ("tag", fg(0x2588cd)),
+                ("label", fg(0x6c71c4)),
+                ("namespace", fg(0xa67e00)),
+                ("macro", fg(0xcb4b16)),
+                ("escape", fg(0xdc322f)),
+                ("heading", fg(0xcb4b16).add_modifier(Modifier::BOLD)),
+                ("link", fg(0x2588cd).add_modifier(Modifier::UNDERLINED)),
+                ("emphasis", Style::new().add_modifier(Modifier::ITALIC)),
+            ],
+        }
+    }
+
+    /// Thème embarqué par son nom, un de `ide_core::THEMES`.
     pub fn by_name(name: &str) -> Option<Self> {
         match name {
             "dark" => Some(Self::dark()),
             "light" => Some(Self::light()),
+            "gruvbox" => Some(Self::gruvbox()),
+            "solarized-light" => Some(Self::solarized_light()),
             _ => None,
         }
     }
@@ -190,8 +305,11 @@ mod tests {
         "emphasis",
     ];
 
-    fn themes() -> [Theme; 2] {
-        [Theme::dark(), Theme::light()]
+    fn themes() -> Vec<Theme> {
+        ide_core::THEMES
+            .iter()
+            .map(|n| Theme::by_name(n).expect("thème de THEMES"))
+            .collect()
     }
 
     /// Ratio de contraste WCAG 2 entre deux couleurs RGB.
@@ -235,6 +353,10 @@ mod tests {
     fn par_nom() {
         assert_eq!(Theme::by_name("dark"), Some(Theme::dark()));
         assert_eq!(Theme::by_name("light"), Some(Theme::light()));
+        // Chaque nom de `THEMES` a son thème, sous ce nom.
+        for (n, t) in ide_core::THEMES.iter().zip(themes()) {
+            assert_eq!(*n, t.name);
+        }
         assert_eq!(Theme::by_name("Dark"), None);
         assert_eq!(Theme::by_name(""), None);
     }
@@ -274,6 +396,9 @@ mod tests {
                 ("error", t.error),
                 ("warning", t.warning),
                 ("muted", t.muted),
+                ("git_added", t.git_added),
+                ("git_modified", t.git_modified),
+                ("git_deleted", t.git_deleted),
             ]);
             for (c, f) in secondary {
                 for b in [t.background, t.current_line] {

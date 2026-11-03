@@ -913,6 +913,7 @@ dependencies = [
  "ide-core",
  "ignore",
  "notify-debouncer-mini",
+ "similar",
  "tempfile",
  "toml",
  "trash",

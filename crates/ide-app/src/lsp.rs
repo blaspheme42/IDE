@@ -399,8 +399,8 @@ impl LspManager {
                     save,
                 } => {
                     let edits = match &client {
-                        Some(c) => or_empty("formatting", c.formatting(&path, indent).await),
-                        None => Vec::new(),
+                        Some(c) => Some(or_empty("formatting", c.formatting(&path, indent).await)),
+                        None => None,
                     };
                     Event::FormatResult {
                         path,

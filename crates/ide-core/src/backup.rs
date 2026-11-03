@@ -161,7 +161,7 @@ mod tests {
         offre(&mut s);
         assert_eq!(banner_height(&s), 1);
         assert_eq!(editor_size(&s).1, h - 1);
-        let col = crate::explorer_width(&s) + crate::gutter_width(&s.doc) + 1;
+        let col = crate::explorer_width(&s) + crate::gutter_width(&s) + 1;
         let clic = |s: &mut State, row| {
             update(
                 s,

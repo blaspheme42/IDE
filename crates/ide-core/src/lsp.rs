@@ -478,9 +478,18 @@ pub(crate) fn format_result(
     state: &mut State,
     path: PathBuf,
     version: u64,
-    edits: Vec<(Position, Position, String)>,
+    edits: Option<Vec<(Position, Position, String)>>,
     save: bool,
 ) -> Vec<Command> {
+    // Sans ce message, un serveur absent laisse croire que la mise en page ne marche pas.
+    match &edits {
+        None if !save => {
+            state.status =
+                "Mise en page : aucun serveur de langage pour ce fichier (voir README)".into();
+        }
+        Some(e) if e.is_empty() && !save => state.status = "Mise en page : rien à changer".into(),
+        _ => {}
+    }
     // L'onglet a pu changer entre-temps : on vise le document de `path`, actif ou non.
     let doc = if state.doc.path.as_ref() == Some(&path) {
         &mut state.doc
@@ -496,6 +505,7 @@ pub(crate) fn format_result(
     };
     if doc.version() == version {
         let edits = edits
+            .unwrap_or_default()
             .into_iter()
             .map(|(a, b, t)| (doc.char_at_lsp(a)..doc.char_at_lsp(b), t))
             .collect();
@@ -928,7 +938,7 @@ mod tests {
         let reponse = |version| Event::FormatResult {
             path: "/p/a.rs".into(),
             version,
-            edits: edits.clone(),
+            edits: Some(edits.clone()),
             save: false,
         };
         // Document modifié depuis Ctrl+0 : ignorée.
@@ -943,6 +953,22 @@ mod tests {
     }
 
     #[test]
+    fn mise_en_page_sans_serveur_le_dit() {
+        let mut s = ouvert("/p/a.html", "<p>");
+        let v = s.doc.version();
+        let reponse = |edits| Event::FormatResult {
+            path: "/p/a.html".into(),
+            version: v,
+            edits,
+            save: false,
+        };
+        update(&mut s, reponse(None));
+        assert!(s.status.contains("aucun serveur"), "{}", s.status);
+        update(&mut s, reponse(Some(vec![])));
+        assert!(s.status.contains("rien à changer"), "{}", s.status);
+    }
+
+    #[test]
     fn ctrl_s_met_en_page_puis_sauvegarde() {
         let mut s = ouvert("/p/a.rs", "x");
         update(&mut s, touche(Key::Char('y'), false, false));
@@ -954,7 +980,7 @@ mod tests {
         let reponse = |version| Event::FormatResult {
             path: "/p/a.rs".into(),
             version,
-            edits: vec![(pos(0, 0), pos(0, 0), "// ".into())],
+            edits: Some(vec![(pos(0, 0), pos(0, 0), "// ".into())]),
             save: true,
         };
         let cmds = update(&mut s, reponse(v));

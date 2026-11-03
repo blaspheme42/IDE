@@ -137,6 +137,12 @@ static COMMANDS: &[CommandInfo] = &[
             },
         },
     ),
+    cmd(
+        "toggle_line_numbers",
+        "Affichage : afficher / masquer les numéros de ligne",
+        alt('l'),
+    ),
+    cmd("next_theme", "Affichage : changer de thème", alt('t')),
     cmd("fold", "Code : replier le bloc", alt('-')),
     cmd("unfold", "Code : déplier le bloc", alt('=')),
     cmd("fold_all", "Code : tout replier", alt('_')),
@@ -211,6 +217,13 @@ pub static SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("Alt+- / Alt+=", "Replier / déplier le bloc du curseur"),
             ("Alt+_ / Alt++", "Tout replier / tout déplier"),
+        ],
+    ),
+    (
+        "Affichage",
+        &[
+            ("Alt+L", "Afficher / masquer les numéros de ligne"),
+            ("Alt+T", "Thème suivant"),
         ],
     ),
     (

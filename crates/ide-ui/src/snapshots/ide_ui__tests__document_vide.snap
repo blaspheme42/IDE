@@ -3,7 +3,7 @@ source: crates/ide-ui/src/lib.rs
 expression: backend
 ---
 "┌ EXPLORATEUR ───────────────┐ [sans nom] ×                                     "
-"│                            │   1                                              "
+"│                            │    1                                             "
 "│                            │                                                  "
 "│                            │                                                  "
 "│                            │                                                  "

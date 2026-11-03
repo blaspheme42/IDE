@@ -48,7 +48,8 @@ cargo test --workspace    # lance tous les tests
 
 ```toml
 [editor]
-theme = "dark"          # dark | light
+theme = "dark"          # dark | light | gruvbox | solarized-light
+line_numbers = true     # numéros de ligne dans la gouttière
 tab_size = 4            # quand aucun .editorconfig ne s'applique
 insert_spaces = true
 format_on_save = true   # mise en page par le serveur de langage à chaque Ctrl+S
@@ -93,6 +94,8 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 - `Tab` / `Shift+Tab` : indenter / désindenter (la sélection entière si elle couvre plusieurs lignes) ; `Entrée` garde l'indentation. Tabulations ou espaces et largeur selon `.editorconfig` (4 espaces par défaut).
 - Paires automatiques : `(`, `[`, `{`, `"` et `'` insèrent leur fermante derrière le curseur ; taper la fermante déjà présente la saute, `Retour arrière` entre une paire vide retire les deux. Pas de fermante devant un mot, ni pour un guillemet collé à un mot (`l'arbre`), ni pour `'` en Rust. La parenthèse, le crochet ou l'accolade associé au curseur est mis en surbrillance.
 - Repli des blocs (selon l'indentation) : `Alt+-` replie le bloc du curseur, `Alt+=` le déplie, `Alt+_` / `Alt++` replient / déplient tout ; clic dans la gouttière pour basculer une ligne. La gouttière marque d'un `-` les blocs repliables et d'un `+` les blocs repliés (suivis de `⋯`), les flèches le sautent, il se déplie si le curseur y arrive (recherche, F12, annuler).
+- Marques git (comme VS Code) : une barre colorée en début de gouttière signale les lignes ajoutées (vert), modifiées (bleu) ou supprimées (`▁` / `▔` rouge) depuis le dernier commit, à jour pendant la frappe. Fichier non suivi : tout est ajouté ; hors dépôt git (ou sans git) : aucune marque.
+- Affichage : `Alt+L` affiche / masque les numéros de ligne, `Alt+T` passe au thème suivant (`dark`, `light`, `gruvbox`, `solarized-light`), aussi depuis la palette de commandes.
 - HTML et PHP : taper le `>` d'une balise ouvrante insère sa fermante (`<div>|</div>`), sauf éléments vides (`<br>`, `<img>`…) et `/>`.
 - `Ctrl+F` / `Ctrl+H` : rechercher / remplacer. Dans la barre : `Entrée` ou `F3` suivant, `Shift+F3` précédent, `Tab` change de champ, `Entrée` dans « Remplacer » remplace l'occurrence courante, `Alt+Entrée` remplace tout, `Alt+R` regex (`$1`, `${nom}` dans le remplacement), `Alt+C` casse, `Échap` ferme.
 - Explorateur : `Ctrl+B` l'affiche ou le masque, `Ctrl+E` y place le focus ; flèches pour naviguer, `Entrée` ouvre, `n` / `Shift+N` nouveau fichier / dossier, `F2` ou `r` renommer, `m` déplacer, `Suppr` corbeille (confirmation), `.` fichiers cachés, `<` / `>` largeur.
