@@ -169,7 +169,7 @@ pub enum Event {
     /// Branche git courante (`None` : pas de dépôt, ou HEAD détachée → l'app envoie le commit court).
     GitBranch(Option<String>),
     /// Texte de `path` dans HEAD, pour les marques git de la gouttière : `None` = pas de marques
-    /// (hors dépôt, git absent), `Some("")` = fichier non suivi (tout est ajouté).
+    /// (hors dépôt, git absent, fichier non suivi).
     GitBase {
         path: PathBuf,
         base: Option<String>,

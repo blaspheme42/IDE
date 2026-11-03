@@ -384,3 +384,24 @@ async fn rust_analyzer_reel() {
     assert!(exited.await.is_ok());
     assert!(!c.is_alive());
 }
+
+#[test]
+fn dossiers_d_en_tetes_pour_clangd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    for d in ["include", "src", "lib/sub", ".cache", "node_modules/x"] {
+        std::fs::create_dir_all(root.join(d)).unwrap();
+    }
+    for f in [
+        "include/media.h",
+        "src/main.c",
+        "lib/sub/a.hpp",
+        ".cache/b.h",
+        "node_modules/x/c.h",
+    ] {
+        std::fs::write(root.join(f), "").unwrap();
+    }
+    let mut dirs = header_dirs(root);
+    dirs.sort();
+    assert_eq!(dirs, [root.join("include"), root.join("lib/sub")]);
+}

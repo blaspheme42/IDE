@@ -69,6 +69,44 @@ pub struct Client {
     inner: Arc<Inner>,
 }
 
+/// Dossiers du projet contenant des `.h` / `.hpp`, en largeur d'abord : dossiers cachés, `target`
+/// et `node_modules` exclus.
+// shortcut: parcours borné (profondeur 5, 2000 dossiers, 64 résultats), pour un `ide` lancé dans $HOME.
+pub fn header_dirs(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut queue = std::collections::VecDeque::from([(root.to_path_buf(), 0)]);
+    let mut visited = 0;
+    while let Some((dir, depth)) = queue.pop_front() {
+        visited += 1;
+        if visited > 2000 || found.len() >= 64 {
+            break;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut has_header = false;
+        for e in entries.flatten() {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            let is_dir = e.file_type().is_ok_and(|t| t.is_dir());
+            if is_dir {
+                if depth < 5
+                    && !name.starts_with('.')
+                    && !matches!(&*name, "target" | "node_modules")
+                {
+                    queue.push_back((e.path(), depth + 1));
+                }
+            } else if name.ends_with(".h") || name.ends_with(".hpp") || name.ends_with(".hh") {
+                has_header = true;
+            }
+        }
+        if has_header {
+            found.push(dir);
+        }
+    }
+    found
+}
+
 impl Client {
     /// Lance le serveur, fait initialize/initialized (capabilities minimales : synchronisation
     /// complète, completion, hover, definition, publishDiagnostics ; positionEncoding utf-16).
@@ -111,11 +149,20 @@ impl Client {
         let (client, rx) = Client::with_io(stdout, stdin, command, TIMEOUT);
         *client.inner.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
         // Les serveurs vscode-*-language-server n'annoncent le formatage que si on le leur demande.
-        let vscode = Path::new(command)
+        let name = Path::new(command)
             .file_name()
-            .is_some_and(|n| n.to_string_lossy().starts_with("vscode-"));
-        let options = if vscode {
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let options = if name.starts_with("vscode-") {
             json!({ "provideFormatter": true })
+        } else if name.starts_with("clangd") {
+            // Sans compile_commands.json, clangd ne cherche les .h qu'à côté du .c : comme VS Code,
+            // on lui donne les dossiers d'en-têtes du projet (il ignore ces options si la base existe).
+            let flags: Vec<String> = header_dirs(root)
+                .iter()
+                .map(|d| format!("-I{}", d.display()))
+                .collect();
+            json!({ "fallbackFlags": flags })
         } else {
             Value::Null
         };
@@ -187,7 +234,7 @@ impl Client {
                 "textDocument": {
                     "synchronization": { "didSave": true },
                     "completion": { "completionItem": { "snippetSupport": true } },
-                    "hover": { "contentFormat": ["plaintext", "markdown"] },
+                    "hover": { "contentFormat": ["markdown", "plaintext"] },
                     "definition": { "linkSupport": true },
                     "formatting": {},
                     "publishDiagnostics": {},

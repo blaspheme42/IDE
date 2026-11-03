@@ -2,6 +2,7 @@
 
 mod explorer;
 mod help;
+mod hover;
 pub mod icons;
 mod lsp;
 mod palette;

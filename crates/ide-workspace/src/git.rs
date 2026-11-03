@@ -11,8 +11,8 @@ use similar::{DiffOp, TextDiff};
 /// Au-delà (base + texte, en octets), pas de marques : le diff coûterait trop cher à chaque édition.
 const MAX_BYTES: usize = 4 << 20;
 
-/// Texte de `path` dans HEAD. `None` = pas de marques (hors dépôt, git absent, fichier ignoré,
-/// contenu non UTF-8) ; `Some("")` = fichier non suivi d'un dépôt (tout est ajouté).
+/// Texte de `path` dans HEAD. `None` = pas de marques (hors dépôt, git absent, fichier non suivi
+/// ou ignoré, contenu non UTF-8), comme VS Code.
 pub fn git_base(path: &Path) -> Option<String> {
     let (dir, name) = (path.parent()?, path.file_name()?);
     let git = |args: &[&OsStr]| -> Option<Output> {
@@ -30,15 +30,10 @@ pub fn git_base(path: &Path) -> Option<String> {
     let mut spec = OsString::from("HEAD:./");
     spec.push(name);
     let show = git(&["show".as_ref(), &spec])?;
-    if show.status.success() {
-        return String::from_utf8(show.stdout).ok();
-    }
-    let inside = git(&["rev-parse".as_ref(), "--is-inside-work-tree".as_ref()])?;
-    if !inside.status.success() || !inside.stdout.starts_with(b"true") {
-        return None;
-    }
-    let ignored = git(&["check-ignore".as_ref(), "-q".as_ref(), "--".as_ref(), name])?;
-    (!ignored.status.success()).then(String::new)
+    show.status
+        .success()
+        .then(|| String::from_utf8(show.stdout).ok())
+        .flatten()
 }
 
 /// Marque de chaque ligne de `current` (autant que de lignes ropey : la ligne vide après le dernier
@@ -165,7 +160,8 @@ mod tests {
         std::fs::write(&neuf, "x\n")?;
         std::fs::write(d.path().join("sous/c.log"), "x\n")?;
         assert_eq!(git_base(&suivi).as_deref(), Some("v1\n"));
-        assert_eq!(git_base(&neuf).as_deref(), Some(""));
+        // Non suivi : aucune marque, comme VS Code (sinon tout un dossier non suivi passe au vert).
+        assert_eq!(git_base(&neuf), None);
         assert_eq!(git_base(&d.path().join("sous/c.log")), None);
         Ok(())
     }

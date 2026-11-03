@@ -4,6 +4,13 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+### Ajouté
+- C : sans `compile_commands.json` ni `.clangd`, clangd reçoit les dossiers du projet qui contiennent des en-têtes (`-Iinclude`…), comme VS Code : `#include "media.h"` depuis `src/` n'est plus une erreur.
+
+### Modifié
+- Infobulle (`Ctrl+K`) mise en forme : nature du symbole et libellés en français (fonction, Renvoie, Paramètres, Type, Dans…), séparateurs en traits, code en couleur, sans la syntaxe markdown. La documentation reste dans la langue du serveur ou du code source.
+- Marques git : plus aucune marque sur un fichier non suivi (comme VS Code), au lieu de tout marquer ajouté.
+
 ## [1.2.0] — 2026-11-03 · Aide F1, marques git et thèmes
 
 ### Ajouté

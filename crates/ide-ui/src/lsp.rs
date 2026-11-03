@@ -162,14 +162,11 @@ pub(crate) fn hover(state: &State, frame: &mut Frame, text: Rect, theme: &Theme)
     };
     let x = screen_pos(state, text, h.at).map_or(text.x, |(x, _)| x);
     let max = (frame.area().width.saturating_sub(2) as usize).min(80);
-    let lines: Vec<String> = h
-        .text
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("```"))
-        .flat_map(|l| wrap(l, max))
-        .take(12)
+    let lines: Vec<Line> = crate::hover::lines(&h.text, theme, max)
+        .into_iter()
+        .take(16)
         .collect();
-    let w = lines.iter().map(|l| l.width()).max().unwrap_or(0);
+    let w = lines.iter().map(Line::width).max().unwrap_or(0);
     if w == 0 {
         return;
     }
@@ -183,12 +180,7 @@ pub(crate) fn hover(state: &State, frame: &mut Frame, text: Rect, theme: &Theme)
         true,
         bounds,
     );
-    popup(
-        frame,
-        area,
-        lines.into_iter().map(Line::from).collect(),
-        theme,
-    );
+    popup(frame, area, lines, theme);
 }
 
 fn popup(frame: &mut Frame, area: Rect, lines: Vec<Line>, theme: &Theme) {
@@ -209,24 +201,6 @@ fn cut(s: &str, max: usize) -> &str {
         }
     }
     s
-}
-
-/// `s` coupé en morceaux d'au plus `max` colonnes (ligne vide gardée).
-fn wrap(s: &str, max: usize) -> Vec<String> {
-    let mut out = vec![String::new()];
-    let mut w = 0;
-    for c in s.chars() {
-        let cw = c.width().unwrap_or(0);
-        if w + cw > max && w > 0 {
-            out.push(String::new());
-            w = 0;
-        }
-        if let Some(l) = out.last_mut() {
-            l.push(c);
-        }
-        w += cw;
-    }
-    out
 }
 
 /// Panneau « PROBLÈMES (n) » : `✖ fichier:ligne:col  message`, chemins relatifs à la racine.
