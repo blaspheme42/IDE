@@ -243,7 +243,8 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     } else if let Some(row) = cur_row.filter(|_| {
         editor_focus
             && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_col)
-    }) {
+    }) && state.help.is_none()
+    {
         frame.set_cursor_position(Position::new(
             text.x + (cur_col - state.scroll_col) as u16,
             text.y + row as u16,

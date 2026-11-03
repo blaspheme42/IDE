@@ -16,8 +16,9 @@ const MAX_BYTES: usize = 4 << 20;
 pub fn git_base(path: &Path) -> Option<String> {
     let (dir, name) = (path.parent()?, path.file_name()?);
     let git = |args: &[&OsStr]| -> Option<Output> {
+        // Dépôt peut-être étranger : sa config ne doit pas lancer de commande (fsmonitor).
         Command::new("git")
-            .arg("-C")
+            .args(["-c", "core.fsmonitor=false", "-C"])
             .arg(dir)
             .args(args)
             .stdin(Stdio::null())
@@ -36,7 +37,7 @@ pub fn git_base(path: &Path) -> Option<String> {
     if !inside.status.success() || !inside.stdout.starts_with(b"true") {
         return None;
     }
-    let ignored = git(&["check-ignore".as_ref(), "-q".as_ref(), name])?;
+    let ignored = git(&["check-ignore".as_ref(), "-q".as_ref(), "--".as_ref(), name])?;
     (!ignored.status.success()).then(String::new)
 }
 
@@ -54,7 +55,9 @@ pub fn git_marks(base: &str, current: &str) -> Vec<Option<GitMark>> {
             format!("{s}\n")
         }
     };
-    let (old, new) = (terminated(base), terminated(current));
+    // `git show` rend le blob tel que stocké (souvent LF) : une copie CRLF ne doit pas tout marquer.
+    let (base, current) = (base.replace("\r\n", "\n"), current.replace("\r\n", "\n"));
+    let (old, new) = (terminated(&base), terminated(&current));
     let diff = TextDiff::configure()
         .deadline(Instant::now() + Duration::from_millis(50))
         .diff_lines(&old, &new);
@@ -122,6 +125,15 @@ mod tests {
     #[test]
     fn trop_gros_aucune_marque() {
         assert!(git_marks(&"x".repeat(MAX_BYTES), "y").is_empty());
+    }
+
+    #[test]
+    fn copie_crlf_identique_a_head_lf() {
+        assert!(
+            git_marks("a\nb\n", "a\r\nb\r\n")
+                .iter()
+                .all(Option::is_none)
+        );
     }
 
     /// git lancé dans `dir`, identité fixée pour le commit ; `false` si git est absent.

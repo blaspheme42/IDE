@@ -142,6 +142,8 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             doc.set_cursor(cursor + text.chars().count(), false);
             vec![]
         }
+        // L'aide est modale : un collage irait dans le document caché derrière.
+        Event::Paste(_) if state.help.is_some() => vec![],
         Event::Paste(text) => {
             state.doc.insert_str(&text);
             vec![]

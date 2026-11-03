@@ -482,12 +482,15 @@ pub(crate) fn format_result(
     save: bool,
 ) -> Vec<Command> {
     // Sans ce message, un serveur absent laisse croire que la mise en page ne marche pas.
+    let fresh = state.doc.path.as_ref() == Some(&path) && state.doc.version() == version;
     match &edits {
-        None if !save => {
+        None if fresh && !save => {
             state.status =
-                "Mise en page : aucun serveur de langage pour ce fichier (voir README)".into();
+                "Mise en page : aucun serveur de langage prêt pour ce fichier (voir README)".into();
         }
-        Some(e) if e.is_empty() && !save => state.status = "Mise en page : rien à changer".into(),
+        Some(e) if fresh && e.is_empty() && !save => {
+            state.status = "Mise en page : aucune modification proposée".into();
+        }
         _ => {}
     }
     // L'onglet a pu changer entre-temps : on vise le document de `path`, actif ou non.
@@ -965,7 +968,7 @@ mod tests {
         update(&mut s, reponse(None));
         assert!(s.status.contains("aucun serveur"), "{}", s.status);
         update(&mut s, reponse(Some(vec![])));
-        assert!(s.status.contains("rien à changer"), "{}", s.status);
+        assert!(s.status.contains("aucune modification"), "{}", s.status);
     }
 
     #[test]

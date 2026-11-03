@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use ide_core::{Event, State};
 use tokio::sync::mpsc;
@@ -13,6 +14,8 @@ pub struct GitMarks {
     requested: HashSet<PathBuf>,
     /// Document et version des marques actuelles ; `None` = à recalculer.
     computed: Option<(PathBuf, u64)>,
+    /// Dernière relecture générale : un outil qui écrit en rafale ne doit pas lancer des dizaines de `git`.
+    cleared: Option<Instant>,
 }
 
 impl GitMarks {
@@ -23,7 +26,14 @@ impl GitMarks {
             Event::Saved { path, .. } => {
                 self.requested.remove(path);
             }
-            Event::GitBranch(_) => self.requested.clear(),
+            Event::GitBranch(_)
+                if self
+                    .cleared
+                    .is_none_or(|t| t.elapsed() > Duration::from_secs(2)) =>
+            {
+                self.cleared = Some(Instant::now());
+                self.requested.clear();
+            }
             Event::GitBase { .. } => self.computed = None,
             _ => {}
         }
