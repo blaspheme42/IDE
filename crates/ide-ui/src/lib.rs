@@ -302,8 +302,18 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         Paragraph::new(F1).style(theme.search_current.add_modifier(Modifier::BOLD)),
         f1,
     );
-    frame.render_widget(Paragraph::new(left).style(theme.status_bar), status);
-    frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), status);
+    // La partie droite garde sa place ; la gauche est tronquée avant elle au lieu de s'y coller.
+    let right = Line::from(format!(" {right}"));
+    let [left_area, right_area] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(right.width() as u16)])
+            .areas(status);
+    frame.render_widget(Paragraph::new(left).style(theme.status_bar), left_area);
+    frame.render_widget(
+        Paragraph::new(right)
+            .alignment(Alignment::Right)
+            .style(theme.status_bar),
+        right_area,
+    );
     // En dernier : recouvrent tout et prennent le curseur placé plus haut (éditeur, recherche, explorateur).
     palette::render(state, frame, theme);
     help::render(state, frame, theme);
@@ -1194,7 +1204,7 @@ mod tests {
         let b = draw(&s);
         let l = ligne(&b, 23);
         assert!(
-            l.starts_with(" F1 Raccourcis  ✖ 2 ⚠ 0 | a.rs | Prêt"),
+            l.starts_with(" F1 Raccourcis  ✖ 2 ⚠ 0 | a.rs | Prê rust-analyzer"),
             "{l}"
         );
         assert!(l.contains("rust-analyzer ✓ | Ln 1, Col 1 | LF"), "{l}");
