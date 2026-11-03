@@ -1,6 +1,5 @@
 ---
 source: crates/ide-ui/src/lib.rs
-assertion_line: 1114
 expression: b
 ---
 "┌ P ─────────────────────────┐ a.rs ×                                           "
@@ -26,4 +25,4 @@ expression: b
 "│                            │                                                  "
 "│                            │                                                  "
 "└────────────────────────────┘                                                  "
-" ✖ 1 ⚠ 1 | a.rs | Prêt               rust-analyzer ✓ | Ln 1, Col 1 | LF | UTF-8 "
+" F1 Raccourcis  p | ✖ 1 ⚠ 1 | a.rs | rust-analyzer ✓ | Ln 1, Col 1 | LF | UTF-8 "

@@ -1,6 +1,5 @@
 ---
 source: crates/ide-ui/src/lib.rs
-assertion_line: 680
 expression: b
 ---
 "┌ EXPLORATEUR ───────────────┐ a.txt ×                                          "
@@ -26,4 +25,4 @@ expression: b
 "│                            │  20   foo bar foo baz foo                        "
 "│                            │  21   foo bar foo baz foo                        "
 "└────────────────────────────┘Rechercher : foo                  [.*] [Aa] 5/120 "
-" a.txt | Prêt                                          Ln 1, Col 1 | LF | UTF-8 "
+" F1 Raccourcis  a.txt | Prêt                           Ln 1, Col 1 | LF | UTF-8 "

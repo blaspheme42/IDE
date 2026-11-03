@@ -1,6 +1,5 @@
 ---
 source: crates/ide-ui/src/palette.rs
-assertion_line: 179
 expression: b
 ---
 "┌ EXPLORATEUR ───────────────┐ a.rs ×                                           "
@@ -26,4 +25,4 @@ expression: b
 "│                            │                                                  "
 "│                            │                                                  "
 "└────────────────────────────┘                                                  "
-" a.rs | Prêt                                           Ln 1, Col 1 | LF | UTF-8 "
+" F1 Raccourcis  a.rs | Prêt                            Ln 1, Col 1 | LF | UTF-8 "

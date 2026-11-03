@@ -96,8 +96,9 @@ cargo install --path crates/ide-app --locked
 
 | Keys | Action |
 | --- | --- |
+| `F1` | All key bindings, on screen (`Esc` or `F1` closes, arrows / `PageUp` / `PageDown` / mouse wheel scroll) |
 | `Ctrl+S` / `Ctrl+Q` | Save / quit (press `Ctrl+Q` twice to discard unsaved changes) |
-| `Ctrl+P` / `Ctrl+Shift+P` | Open a project file / command palette |
+| `Ctrl+P` / `Ctrl+Shift+P` | Open a project file / command palette (or `Ctrl+P` then `>`) |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste (no selection: the whole line) |
 | `Ctrl+A` | Select all |
