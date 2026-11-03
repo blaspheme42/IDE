@@ -6,7 +6,7 @@ IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration 
 
 ![IDE sur un projet Rust : explorateur, onglets, bloc replié, complétion rust-analyzer et diagnostic](docs/screenshot.png)
 
-**État :** version 1.1 — les 21 exigences « Must » du cahier des charges, plus les langages web (HTML, CSS, PHP, JS/TS, Emmet), la mise en page, les paires automatiques et le repli des blocs. Prochaines versions : exigences « Should » (multi-curseurs, écran divisé, terminal intégré, recherche dans le projet…).
+**État :** version 1.2 — les 21 exigences « Must » du cahier des charges, plus les langages web (HTML, CSS, PHP, JS/TS, Emmet), la mise en page, les paires automatiques et le repli des blocs, puis l'aide F1, les marques git, les thèmes et Go. Prochaines versions : exigences « Should » (multi-curseurs, écran divisé, terminal intégré, recherche dans le projet…).
 
 ## Prérequis
 

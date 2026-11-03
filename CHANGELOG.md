@@ -4,6 +4,8 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+## [1.2.0] — 2026-11-03 · Aide F1, marques git et thèmes
+
 ### Ajouté
 - Go : coloration (`.go`) et serveur de langage par défaut gopls.
 - Vue : les fichiers `.vue` sont traités comme du HTML (coloration, serveur HTML, Emmet).
