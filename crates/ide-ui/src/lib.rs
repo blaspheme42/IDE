@@ -1,6 +1,7 @@
 //! Crate ide-ui : widgets ratatui.
 
 mod explorer;
+mod help;
 pub mod icons;
 mod lsp;
 mod palette;
@@ -258,8 +259,20 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         Some(b) => format!("{b} | "),
         None => String::new(),
     };
+    // Dossier du projet avant la branche ; rappel de sortie quand l'explorateur a le focus.
+    let project = state
+        .explorer
+        .root
+        .as_deref()
+        .and_then(|r| r.file_name())
+        .map_or_else(String::new, |n| format!("{} | ", n.to_string_lossy()));
+    let hint = if editor_focus {
+        ""
+    } else {
+        "Échap/Ctrl+E : retour au code | "
+    };
     let left = format!(
-        " {branch}{counts}{}{dirty} | {} ",
+        " {hint}{project}{branch}{counts}{}{dirty} | {} ",
         doc.display_name(),
         state.status
     );
@@ -277,10 +290,19 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         cur_line + 1,
         cur_col + 1
     );
+    // « F1 Raccourcis » toujours visible à gauche : le reste ne s'écrit qu'à sa droite.
+    const F1: &str = " F1 Raccourcis ";
+    let [f1, status] =
+        Layout::horizontal([Constraint::Length(F1.len() as u16), Constraint::Min(0)]).areas(status);
+    frame.render_widget(
+        Paragraph::new(F1).style(theme.search_current.add_modifier(Modifier::BOLD)),
+        f1,
+    );
     frame.render_widget(Paragraph::new(left).style(theme.status_bar), status);
     frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), status);
-    // En dernier : recouvre tout et prend le curseur placé plus haut (éditeur, recherche, explorateur).
+    // En dernier : recouvrent tout et prennent le curseur placé plus haut (éditeur, recherche, explorateur).
     palette::render(state, frame, theme);
+    help::render(state, frame, theme);
 }
 
 /// Barre d'onglets ` nom ● │ nom2 × │ …`, défilée comme `tab_spans` pour garder l'actif visible.
@@ -689,8 +711,8 @@ mod tests {
         assert_eq!(fg(at("[Aa]")), t.foreground);
         assert_eq!(fg(at("[.*]")), t.background);
         assert_eq!(b.buffer()[(at("[.*]"), 22)].fg, t.muted);
-        // Barre d'état sur toute la largeur.
-        assert!((0..80).all(|x| a_style(&b.buffer()[(x, 23)], t.status_bar)));
+        // Barre d'état sur toute la largeur, après le badge « F1 Raccourcis ».
+        assert!((15..80).all(|x| a_style(&b.buffer()[(x, 23)], t.status_bar)));
         assert!(line.contains("5/120"));
         // La zone de texte s'arrête au-dessus : 21 lignes visibles, sous la barre d'onglets.
         assert_eq!(b.buffer()[(0, 21)].symbol(), "│");
@@ -1135,13 +1157,16 @@ mod tests {
         s.lsp_status = "rust-analyzer ✓".into();
         let b = draw(&s);
         let l = ligne(&b, 23);
-        assert!(l.starts_with(" ✖ 2 ⚠ 0 | a.rs | Prêt"), "{l}");
+        assert!(
+            l.starts_with(" F1 Raccourcis  ✖ 2 ⚠ 0 | a.rs | Prêt"),
+            "{l}"
+        );
         assert!(l.contains("rust-analyzer ✓ | Ln 1, Col 1 | LF"), "{l}");
         s.settings.nerd_icons = false;
-        assert!(ligne(&draw(&s), 23).starts_with(" E 2 W 0 | a.rs"));
+        assert!(ligne(&draw(&s), 23).starts_with(" F1 Raccourcis  E 2 W 0 | a.rs"));
         // Sans diagnostic ni serveur : barre inchangée.
         let l = ligne(&draw(&state(Document::from_text(None, ""))), 23);
-        assert!(l.starts_with(" [sans nom] | Prêt"), "{l}");
+        assert!(l.starts_with(" F1 Raccourcis  [sans nom] | Prêt"), "{l}");
         assert!(l.contains("Ln 1, Col 1 | LF") && !l.contains("| Ln"), "{l}");
     }
 
@@ -1151,11 +1176,43 @@ mod tests {
         s.git_branch = Some("main".into());
         let l = ligne(&draw(&s), 23);
         assert!(
-            l.starts_with(" \u{e725} main | ✖ 1 ⚠ 0 | a.rs | Prêt"),
+            l.starts_with(" F1 Raccourcis  \u{e725} main | ✖ 1 ⚠ 0 | a.rs | Prêt"),
             "{l}"
         );
         s.settings.nerd_icons = false;
         let l = ligne(&draw(&s), 23);
-        assert!(l.starts_with(" main | E 1 W 0 | a.rs"), "{l}");
+        assert!(
+            l.starts_with(" F1 Raccourcis  main | E 1 W 0 | a.rs"),
+            "{l}"
+        );
+        // Dossier du projet avant la branche ; rappel quand l'explorateur a le focus.
+        s.explorer.root = Some("/home/moi/IDE".into());
+        s.focus = ide_core::Focus::Explorer;
+        let b = draw(&s);
+        let l = ligne(&b, 23);
+        assert!(
+            l.starts_with(" F1 Raccourcis  Échap/Ctrl+E : retour au code | IDE | "),
+            "{l}"
+        );
+        let accent = Theme::dark().search_current.bg.expect("fond");
+        assert_eq!(b.buffer()[(1, 23)].bg, accent);
+        assert_ne!(b.buffer()[(16, 23)].bg, accent);
+    }
+
+    #[test]
+    fn barre_de_statut_etroite() {
+        // F1 reste visible, rien ne panique, même plus étroit que le badge.
+        for w in [1, 10, 20, 40] {
+            let s = State {
+                width: w,
+                ..state(Document::from_text(Some("a.rs".into()), "x"))
+            };
+            let mut t = Terminal::new(TestBackend::new(w, 24)).unwrap();
+            t.draw(|f| render_with(&s, f, &Theme::dark())).unwrap();
+            let l: String = (0..w)
+                .map(|x| t.backend().buffer()[(x, 23)].symbol())
+                .collect();
+            assert!(" F1 Raccourcis ".starts_with(&l[..l.len().min(15)]), "{l}");
+        }
     }
 }

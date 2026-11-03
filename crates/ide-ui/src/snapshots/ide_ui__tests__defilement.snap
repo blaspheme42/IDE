@@ -1,6 +1,5 @@
 ---
 source: crates/ide-ui/src/lib.rs
-assertion_line: 525
 expression: backend
 ---
 "┌ EXPLORATEUR ───────────────┐ long.txt ×                                       "
@@ -26,4 +25,4 @@ expression: backend
 "│                            │  25   ne 25 abcdefghijklmnopqrstuvwxyz0123456789 "
 "│                            │  26   ne 26 abcdefghijklmnopqrstuvwxyz0123456789 "
 "└────────────────────────────┘  27   ne 27 abcdefghijklmnopqrstuvwxyz0123456789 "
-" long.txt | Prêt                                       Ln 8, Col 1 | LF | UTF-8 "
+" F1 Raccourcis  long.txt | Prêt                        Ln 8, Col 1 | LF | UTF-8 "

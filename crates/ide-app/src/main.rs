@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("activation souris / collage : {e}");
     }
     // Protocole clavier étendu (kitty, WezTerm, foot…) : sans lui, Ctrl+Shift+P arrive comme Ctrl+P et
-    // Ctrl+Shift+M comme Entrée. Ailleurs, F1 ouvre la palette de commandes, qui donne accès à tout.
+    // Ctrl+Shift+M comme Entrée. Ailleurs, Ctrl+P puis `>` ouvre la palette de commandes.
     // shortcut: détection par variables d'environnement plutôt que par requête au terminal, qui attend
     // jusqu'à 2 s sa réponse (NF-01) ; élargir la liste si un terminal compatible manque.
     if kitty_protocol_terminal() {

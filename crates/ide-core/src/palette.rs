@@ -79,6 +79,11 @@ static COMMANDS: &[CommandInfo] = &[
     cmd(
         "command_palette",
         "Palette de commandes",
+        with(Key::Char('P'), true, true),
+    ),
+    cmd(
+        "keyboard_shortcuts",
+        "Aide : raccourcis clavier",
         with(Key::F(1), false, false),
     ),
     cmd(
@@ -152,6 +157,115 @@ static COMMANDS: &[CommandInfo] = &[
         with(Key::Char('m'), true, true),
     ),
 ];
+
+/// Écran d'aide (F1) : groupes de (touches, action). Touches séparées par « / » (un test vérifie que
+/// chaque commande de `COMMANDS` y figure).
+pub static SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Fichiers",
+        &[
+            ("Ctrl+P", "Ouvrir un fichier du projet"),
+            ("Ctrl+Shift+P", "Palette de commandes (ou Ctrl+P puis >)"),
+            ("Ctrl+S", "Sauvegarder"),
+            ("Ctrl+Q", "Quitter (deux fois : sans sauvegarder)"),
+            (
+                "Alt+R / Alt+K",
+                "Fichier changé sur le disque : recharger / garder",
+            ),
+            ("Alt+B / Alt+N", "Copie de secours : restaurer / ignorer"),
+        ],
+    ),
+    (
+        "Édition",
+        &[
+            ("Ctrl+Z / Ctrl+Y", "Annuler / rétablir"),
+            (
+                "Ctrl+C / Ctrl+X / Ctrl+V",
+                "Copier / couper / coller (sans sélection : la ligne)",
+            ),
+            ("Ctrl+A", "Tout sélectionner"),
+            (
+                "Ctrl+Gauche / Ctrl+Droite",
+                "Mot précédent / suivant (Shift : sélectionner)",
+            ),
+            ("Ctrl+Début / Ctrl+Fin", "Début / fin du fichier"),
+            ("Alt+Retour arrière", "Effacer le mot précédent"),
+            ("Tab / Shift+Tab", "Indenter / désindenter"),
+        ],
+    ),
+    (
+        "Recherche",
+        &[
+            ("Ctrl+F / Ctrl+H", "Rechercher / remplacer"),
+            (
+                "F3 / Shift+F3",
+                "Occurrence suivante / précédente (aussi Entrée)",
+            ),
+            ("Alt+Entrée", "Tout remplacer"),
+            ("Alt+R / Alt+C", "Expression régulière / respecter la casse"),
+            ("Échap", "Fermer la barre"),
+        ],
+    ),
+    (
+        "Repliage",
+        &[
+            ("Alt+- / Alt+=", "Replier / déplier le bloc du curseur"),
+            ("Alt+_ / Alt++", "Tout replier / tout déplier"),
+        ],
+    ),
+    (
+        "Code / LSP",
+        &[
+            ("Ctrl+Espace", "Complétion"),
+            ("Ctrl+K", "Infobulle"),
+            ("F12", "Aller à la définition"),
+            (
+                "Alt+Shift+F",
+                "Mettre en page (aussi Ctrl+0 selon le terminal)",
+            ),
+            ("F8 / Shift+F8", "Problème suivant / précédent"),
+        ],
+    ),
+    (
+        "Onglets",
+        &[
+            ("Ctrl+W", "Fermer l'onglet (deux fois s'il est modifié)"),
+            (
+                "Ctrl+Page suiv. / Ctrl+Page préc.",
+                "Onglet suivant / précédent",
+            ),
+            ("Ctrl+Tab / Ctrl+Shift+Tab", "Onglet suivant / précédent"),
+            ("Alt+1 / … / Alt+9", "Aller à l'onglet (Alt+9 : le dernier)"),
+        ],
+    ),
+    (
+        "Explorateur",
+        &[
+            ("Ctrl+B", "Afficher / masquer l'explorateur"),
+            ("Ctrl+E", "Basculer le focus explorateur / code"),
+            ("Échap", "Revenir au code"),
+            ("Entrée", "Ouvrir le fichier, déplier le dossier"),
+            ("n / Shift+N", "Nouveau fichier / dossier"),
+            ("F2 / r", "Renommer"),
+            ("m", "Déplacer"),
+            ("Suppr", "Mettre à la corbeille"),
+            (".", "Afficher / masquer les fichiers cachés"),
+            ("< / >", "Réduire / élargir"),
+        ],
+    ),
+    (
+        "Panneaux",
+        &[
+            ("Ctrl+Shift+M", "Panneau Problèmes"),
+            ("F1", "Cet écran d'aide"),
+        ],
+    ),
+];
+
+/// Lignes de l'écran d'aide : par groupe, son titre puis ses raccourcis ; une ligne vide entre groupes.
+pub fn help_len() -> usize {
+    SHORTCUTS.iter().map(|(_, v)| v.len() + 2).sum::<usize>() - 1
+}
 
 /// Toutes les commandes, dans l'ordre affiché pour une requête vide.
 pub fn commands() -> &'static [CommandInfo] {
@@ -346,10 +460,6 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
         };
         return Some(open(state, kind));
     }
-    // F1 : palette de commandes (VSCode), joignable même quand le terminal confond Ctrl+Shift+P et Ctrl+P.
-    if k.key == Key::F(1) && !ctrl && !alt && !shift {
-        return Some(open(state, PaletteKind::Commands));
-    }
     let n = state.palette.as_ref()?.ranked.len().max(1);
     let p = state.palette.as_mut()?;
     match k.key {
@@ -362,6 +472,11 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
         Key::Backspace => {
             p.query.pop();
             p.selected = 0;
+            refresh(state);
+        }
+        // `>` en tête (VSCode) : commandes, joignables même quand le terminal confond Ctrl+Shift+P et Ctrl+P.
+        Key::Char('>') if p.kind == PaletteKind::Files && p.query.is_empty() && !ctrl && !alt => {
+            p.kind = PaletteKind::Commands;
             refresh(state);
         }
         Key::Char(c) if !ctrl && !alt && !c.is_control() => {
@@ -470,7 +585,7 @@ mod tests {
         s.settings
             .keys
             .push((KeyInput::parse("ctrl+s").expect("ctrl+s"), "quit".into()));
-        update(&mut s, touche(Key::F(1), false, false));
+        update(&mut s, touche(Key::Char('P'), true, true));
         for c in "sauvegarder".chars() {
             update(&mut s, touche(Key::Char(c), false, false));
         }
@@ -663,6 +778,30 @@ mod tests {
             update(&mut s, touche(Key::Char('q'), true, false)),
             vec![Command::Quit]
         );
+    }
+
+    #[test]
+    fn chevron_bascule_vers_les_commandes() {
+        let mut s = projet(&["a.rs"]);
+        update(&mut s, touche(Key::Char('p'), true, false));
+        tape(&mut s, ">");
+        let p = s.palette.clone().expect("palette");
+        assert_eq!((p.kind, p.query.as_str()), (PaletteKind::Commands, ""));
+        // Ailleurs qu'en tête, `>` se tape.
+        update(&mut s, touche(Key::Char('p'), true, false));
+        tape(&mut s, "a>");
+        assert_eq!(s.palette.map(|p| p.query), Some("a>".into()));
+    }
+
+    #[test]
+    fn aide_couvre_chaque_commande() {
+        let touches: HashSet<&str> = SHORTCUTS
+            .iter()
+            .flat_map(|(_, v)| v.iter().flat_map(|(k, _)| k.split(" / ")))
+            .collect();
+        for c in commands() {
+            assert!(touches.contains(c.key.to_string().as_str()), "{}", c.key);
+        }
     }
 
     #[test]

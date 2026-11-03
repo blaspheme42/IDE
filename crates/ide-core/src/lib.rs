@@ -21,7 +21,8 @@ pub use lsp::{
     visible_completions,
 };
 pub use palette::{
-    CommandInfo, Palette, PaletteItem, PaletteKind, command_by_name, commands, palette_items,
+    CommandInfo, Palette, PaletteItem, PaletteKind, SHORTCUTS, command_by_name, commands, help_len,
+    palette_items,
 };
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
@@ -348,6 +349,13 @@ pub struct State {
     pub disk_conflict: Option<(PathBuf, String)>,
     /// Copie de secours proposée au démarrage : chemin et texte (Alt+B restaure, Alt+N ignore).
     pub backup_offer: Option<(PathBuf, String)>,
+    /// Écran d'aide des raccourcis (F1) ouvert : index de sa première ligne affichée.
+    pub help: Option<usize>,
+}
+
+/// Lignes de l'aide visibles à la fois : écran moins le cadre et une marge en haut et en bas.
+pub fn help_rows(state: &State) -> usize {
+    usize::from(state.height.saturating_sub(4)).max(1)
 }
 
 /// Largeur occupée par l'explorateur (0 s'il est masqué), partagée par l'UI et le calcul du défilement.

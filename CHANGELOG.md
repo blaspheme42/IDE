@@ -7,6 +7,11 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 ### Ajouté
 - Go : coloration (`.go`) et serveur de langage par défaut gopls.
 - Vue : les fichiers `.vue` sont traités comme du HTML (coloration, serveur HTML, Emmet).
+- `F1` ouvre l'écran d'aide : tous les raccourcis groupés (fichiers, édition, recherche, repliage, code, onglets, explorateur, panneaux), défilé par les flèches, `Page préc.` / `Page suiv.` ou la molette, fermé par `Échap` ou `F1` ; aussi « Aide : raccourcis clavier » dans la palette de commandes.
+- Barre de statut : `F1 Raccourcis` toujours affiché en couleur d'accent, nom du dossier du projet avant la branche, et `Échap/Ctrl+E : retour au code` quand l'explorateur a le focus.
+
+### Modifié
+- `F1` n'ouvre plus la palette de commandes : `Ctrl+Shift+P`, ou `Ctrl+P` puis `>` (comme VSCode) dans les terminaux qui confondent `Ctrl+Shift+P` et `Ctrl+P`.
 
 ### Corrigé
 - Mise en page HTML, CSS et JSON : les serveurs vscode-*-language-server reçoivent `provideFormatter`, sans quoi ils n'annoncent pas la mise en page.

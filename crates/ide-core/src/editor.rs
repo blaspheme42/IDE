@@ -21,6 +21,14 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     let version = state.doc.version();
     let mut cmds = match event {
         Event::Key(k) => key(state, k),
+        Event::Mouse(m) if state.help.is_some() => {
+            match m.kind {
+                MouseKind::ScrollUp => scroll_help(state, -(WHEEL_LINES as isize)),
+                MouseKind::ScrollDown => scroll_help(state, WHEEL_LINES as isize),
+                _ => {}
+            }
+            vec![]
+        }
         Event::Mouse(m) => explorer::mouse(state, m).unwrap_or_else(|| {
             mouse(state, m);
             vec![]
@@ -298,6 +306,37 @@ fn copied(doc: &Document) -> (std::ops::Range<usize>, String, bool) {
     (r, text, true)
 }
 
+/// Défile l'aide de `delta` lignes, sans dépasser sa dernière page.
+fn scroll_help(state: &mut State, delta: isize) {
+    let max = crate::help_len().saturating_sub(crate::help_rows(state));
+    if let Some(top) = &mut state.help {
+        *top = top.saturating_add_signed(delta).min(max);
+    }
+}
+
+/// F1 ouvre / ferme l'aide ; ouverte, elle prend toutes les touches sauf Ctrl+Q. `None` = touche laissée à la suite.
+fn help_key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
+    let plain = k.mods == crate::Modifiers::default();
+    if k.key == Key::F(1) && plain {
+        state.help = state.help.is_none().then_some(0);
+        return Some(vec![]);
+    }
+    state.help?;
+    let page = crate::help_rows(state) as isize;
+    match k.key {
+        Key::Esc => state.help = None,
+        Key::Up => scroll_help(state, -1),
+        Key::Down => scroll_help(state, 1),
+        Key::PageUp => scroll_help(state, -page),
+        Key::PageDown => scroll_help(state, page),
+        Key::Home => state.help = Some(0),
+        Key::End => scroll_help(state, isize::MAX),
+        Key::Char('q' | 'Q') if k.mods.ctrl && !k.mods.alt => return None,
+        _ => {}
+    }
+    Some(vec![])
+}
+
 fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     // AltGr arrive comme Ctrl+Alt sur certains terminaux (AZERTY : AltGr+4 = `{`) : c'est un caractère tapé.
     if let Key::Char(c) = k.key
@@ -324,6 +363,10 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     if !(ctrl('w') || ctrl('W')) && state.close_armed {
         state.close_armed = false;
         state.status.clear();
+    }
+    // Aide (F1) : modale, au-dessus de tout, même de la palette ; Ctrl+Q passe.
+    if let Some(cmds) = help_key(state, k) {
+        return cmds;
     }
     // Palette ouverte : modale, elle passe avant tout le reste.
     if let Some(cmds) = palette::key(state, k) {
@@ -1208,5 +1251,58 @@ mod tests {
         // Ailleurs : tabulation ordinaire.
         assert_eq!(ouvert("/x/a.txt", "!").doc.rope().to_string(), "!   ");
         assert_eq!(ouvert("/x/a.html", "a!").doc.rope().to_string(), "a!  ");
+    }
+
+    #[test]
+    fn f1_ouvre_et_ferme_l_aide() {
+        let mut s = opened("ab");
+        s.height = 20;
+        s.focus = crate::Focus::Explorer;
+        update(&mut s, k(Key::F(1)));
+        assert_eq!(s.help, Some(0));
+        // Modale : les touches ne vont ni au document ni à l'explorateur.
+        update(&mut s, k(Key::Char('x')));
+        update(&mut s, k(Key::Down));
+        assert_eq!(s.help, Some(1));
+        assert_eq!(s.doc.rope().to_string(), "ab");
+        // Défilement borné à la dernière page (16 lignes visibles).
+        update(&mut s, k(Key::End));
+        let max = crate::help_len() - 16;
+        assert_eq!(s.help, Some(max));
+        update(&mut s, k(Key::PageDown));
+        assert_eq!(s.help, Some(max));
+        let molette = |kind| {
+            Event::Mouse(MouseInput {
+                kind,
+                column: 0,
+                row: 0,
+                mods: Modifiers::default(),
+            })
+        };
+        update(&mut s, molette(MouseKind::ScrollUp));
+        assert_eq!(s.help, Some(max - WHEEL_LINES));
+        update(&mut s, k(Key::PageUp));
+        assert_eq!(s.help, Some(max - WHEEL_LINES - 16));
+        update(&mut s, k(Key::Home));
+        assert_eq!(s.help, Some(0));
+        update(&mut s, k(Key::F(1)));
+        assert_eq!(s.help, None);
+        update(&mut s, k(Key::F(1)));
+        assert_eq!(update(&mut s, ctrl('q')), vec![Command::Quit]);
+        update(&mut s, k(Key::Esc));
+        assert_eq!(s.help, None);
+        assert_eq!(s.focus, crate::Focus::Explorer);
+    }
+
+    #[test]
+    fn commande_raccourcis_clavier() {
+        let mut s = State::default();
+        update(&mut s, avec(Key::Char('P'), true, true));
+        for c in "raccourcis".chars() {
+            update(&mut s, k(Key::Char(c)));
+        }
+        update(&mut s, k(Key::Enter));
+        assert!(s.palette.is_none());
+        assert_eq!(s.help, Some(0));
     }
 }
