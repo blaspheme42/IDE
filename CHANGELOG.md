@@ -4,6 +4,11 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+## [1.2.1] — 2026-11-03 · Infobulle en français, en-têtes C
+
+### Documentation
+- Guide d'installation sous Windows (WSL) dans les README.
+
 ### Ajouté
 - C : sans `compile_commands.json` ni `.clangd`, clangd reçoit les dossiers du projet qui contiennent des en-têtes (`-Iinclude`…), comme VS Code : `#include "media.h"` depuis `src/` n'est plus une erreur.
 

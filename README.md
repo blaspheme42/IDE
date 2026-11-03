@@ -10,7 +10,7 @@
 
 ![IDE editing a Rust project: file explorer, tabs, folded block, rust-analyzer completion and diagnostics](docs/screenshot.png)
 
-> **Status: 1.2, usable for daily editing.** Tested on Linux. macOS is built by CI but not tested by hand. On Windows, use WSL. The interface (status messages, menus, prompts) is currently in French.
+> **Status: 1.2, usable for daily editing.** Tested on Linux. macOS is built by CI but not tested by hand. On Windows, use [WSL](#windows-wsl). The interface (status messages, menus, prompts) is currently in French.
 
 ## Features
 
@@ -93,6 +93,38 @@ git clone https://github.com/blaspheme42/IDE
 cd IDE
 cargo install --path crates/ide-app --locked
 ```
+
+### Windows (WSL)
+
+IDE runs in WSL (Windows Subsystem for Linux), in Windows Terminal.
+
+1. In PowerShell **as administrator**, install WSL with Ubuntu, then restart Windows:
+
+   ```powershell
+   wsl --install
+   ```
+
+2. Open **Ubuntu** from the Start menu and create your Linux user. Then install the build tools and Rust:
+
+   ```sh
+   sudo apt update && sudo apt install -y build-essential curl git
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   ```
+
+3. Install IDE:
+
+   ```sh
+   cargo install --git https://github.com/blaspheme42/IDE ide-app --locked
+   ```
+
+4. Install the Nerd Font **on Windows** (double-click the `.ttf` files, *Install*), then select it in Windows Terminal: *Settings* → *Ubuntu* → *Appearance* → *Font face*.
+
+5. Language servers go inside Ubuntu, as in [step 4](#4-install-language-servers-optional) (`sudo apt install clangd`, `npm` from `sudo apt install nodejs npm`…).
+
+Keep your projects in the Linux file system (`~/projects`, not `/mnt/c/...`): files are much faster to read there, and changes are detected reliably. From Windows, they are at `\\wsl$\Ubuntu\home\<user>`.
+
+Clipboard: copy and paste inside IDE always work. Sharing the clipboard with Windows needs WSLg (Windows 11, or a recent Windows 10 with `wsl --update`). Pasting from Windows with `Ctrl+Shift+V` or a right click works everywhere.
 
 ## Key bindings
 

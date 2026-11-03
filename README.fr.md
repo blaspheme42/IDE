@@ -20,6 +20,23 @@ cargo install --path crates/ide-app   # installe le binaire `ide` dans ~/.cargo/
 ide ~/mon-projet
 ```
 
+### Sous Windows (WSL)
+
+1. Dans PowerShell **en administrateur** : `wsl --install`, puis redémarrer Windows.
+2. Ouvrir **Ubuntu** depuis le menu Démarrer, créer l'utilisateur Linux, puis :
+
+   ```sh
+   sudo apt update && sudo apt install -y build-essential curl git
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   cargo install --git https://github.com/blaspheme42/IDE ide-app --locked
+   ```
+
+3. Installer la Nerd Font **côté Windows** (double-clic sur les `.ttf`, *Installer*) et la choisir dans Windows Terminal : *Paramètres* → *Ubuntu* → *Apparence* → *Type de police*.
+4. Les serveurs de langage s'installent dans Ubuntu (`sudo apt install clangd`, `sudo apt install nodejs npm` puis les `npm install -g` ci-dessous).
+
+Garder ses projets dans le système de fichiers Linux (`~/projets`, pas `/mnt/c/...`) : bien plus rapide, et les changements de fichiers y sont détectés. Depuis Windows : `\\wsl$\Ubuntu\home\<utilisateur>`. Le copier-coller dans l'IDE marche toujours ; le partage du presse-papiers avec Windows demande WSLg (Windows 11, ou Windows 10 récent après `wsl --update`) ; coller depuis Windows par `Ctrl+Shift+V` ou clic droit marche partout.
+
 Langages colorés : Rust, C, Python, JavaScript, TypeScript (et TSX), HTML (et Vue), CSS, JSON, TOML, Markdown, PHP, Go.
 
 Serveurs de langage (facultatifs, démarrés automatiquement s'ils sont installés) :
