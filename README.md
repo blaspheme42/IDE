@@ -8,28 +8,7 @@
 
 **A VS Code–style IDE that runs in your terminal, written in Rust.** File explorer, tabs, tree-sitter syntax highlighting, and language-server completion, go-to-definition and diagnostics. One binary, usable locally or over SSH.
 
-```
-┌ DEMO ──────────────────────┐ main.rs ×
-│ src                        │   1   use std::collections::HashMap;
-│ Cargo.lock                 │   2
-│ Cargo.toml                 │   3   /// Counts how often each word appears.
-│ README.md                  │   4 - fn word_count(text: &str) -> HashMap<&str, usize> {
-│                            │   5       let mut counts = HashMap::new();
-│                            │   6 +     for word in text.split_whitespace() { ⋯
-│                            │   8       }
-│                            │   9       counts
-│                            │  10   }
-│                            │  11
-│                            │  12 - fn main() {
-│                            │  13       let text = "the quick brown fox jumps over the lazy
-│                            │  14       let counts = word_count(text);
-│                            │  15 -     for (word, n) in &counts {
-│                            │  16           println!("{word}: {n}");
-│                            │  17       }
-│                            │  18   }
-└────────────────────────────┘
-  master | main.rs                                rust-analyzer ✓ | Ln 6, Col 1 | LF | UTF-8
-```
+![IDE editing a Rust project: file explorer, tabs, folded block, rust-analyzer completion and diagnostics](docs/screenshot.png)
 
 > **Status: 1.1, usable for daily editing.** Tested on Linux. macOS is built by CI but not tested by hand. On Windows, use WSL. The interface (status messages, menus, prompts) is currently in French.
 
