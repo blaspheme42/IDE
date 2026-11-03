@@ -4,6 +4,13 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+### Ajouté
+- Go : coloration (`.go`) et serveur de langage par défaut gopls.
+- Vue : les fichiers `.vue` sont traités comme du HTML (coloration, serveur HTML, Emmet).
+
+### Corrigé
+- Mise en page HTML, CSS et JSON : les serveurs vscode-*-language-server reçoivent `provideFormatter`, sans quoi ils n'annoncent pas la mise en page.
+
 ## [1.1.0] — 2026-11-03 · Langages web et confort d'édition
 
 ### Ajouté

@@ -1,6 +1,6 @@
 use super::*;
 
-const ALL: [Language; 12] = [
+const ALL: [Language; 13] = [
     Language::Rust,
     Language::Python,
     Language::C,
@@ -13,6 +13,7 @@ const ALL: [Language; 12] = [
     Language::Toml,
     Language::Markdown,
     Language::Php,
+    Language::Go,
 ];
 
 /// Catégorie de la première occurrence de `word` dans `text`.
@@ -49,6 +50,8 @@ fn from_path() {
     assert_eq!(f("Cargo.lock"), Some(Language::Toml));
     assert_eq!(f("README.md"), Some(Language::Markdown));
     assert_eq!(f("index.php"), Some(Language::Php));
+    assert_eq!(f("App.vue"), Some(Language::Html));
+    assert_eq!(f("main.go"), Some(Language::Go));
     assert_eq!(f("a.xyz"), None);
     assert_eq!(f("Makefile"), None);
     assert_eq!(Language::Tsx.name(), "TSX");
@@ -64,7 +67,7 @@ fn chaque_requete_compile() {
 #[test]
 fn neuf_langages_colores() {
     use Highlight as H;
-    let cases: [(Language, &str, &str, H); 19] = [
+    let cases: [(Language, &str, &str, H); 21] = [
         (
             Language::Rust,
             "fn main() { let x = \"a\"; } // c",
@@ -173,6 +176,18 @@ fn neuf_langages_colores() {
             "<p class=\"a\"><?php echo 'x'; ?></p>",
             "echo",
             H::Keyword,
+        ),
+        (
+            Language::Go,
+            "package main\nfunc main() { s := \"x\" }\n",
+            "func",
+            H::Keyword,
+        ),
+        (
+            Language::Go,
+            "package main\nfunc main() { s := \"x\" }\n",
+            "\"x\"",
+            H::String,
         ),
     ];
     for (lang, text, word, want) in cases {

@@ -110,7 +110,16 @@ impl Client {
         }
         let (client, rx) = Client::with_io(stdout, stdin, command, TIMEOUT);
         *client.inner.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
-        client.initialize(root).await?;
+        // Les serveurs vscode-*-language-server n'annoncent le formatage que si on le leur demande.
+        let vscode = Path::new(command)
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("vscode-"));
+        let options = if vscode {
+            json!({ "provideFormatter": true })
+        } else {
+            Value::Null
+        };
+        client.initialize(root, options).await?;
         Ok((client, rx))
     }
 
@@ -164,7 +173,7 @@ impl Client {
 
     /// `initialize` puis `initialized`.
     #[doc(hidden)]
-    pub async fn initialize(&self, root: &Path) -> Result<(), String> {
+    pub async fn initialize(&self, root: &Path, options: Value) -> Result<(), String> {
         let uri = path_to_uri(root);
         let name = root.file_name().map(|n| n.to_string_lossy().into_owned());
         let params = json!({
@@ -172,6 +181,7 @@ impl Client {
             "rootUri": uri,
             "workspaceFolders": [{ "uri": uri, "name": name.unwrap_or_default() }],
             "clientInfo": { "name": "ide" },
+            "initializationOptions": options,
             "capabilities": {
                 "general": { "positionEncodings": ["utf-16"] },
                 "textDocument": {

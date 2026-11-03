@@ -19,7 +19,7 @@
 - **Editing helpers**: auto-closing `()` `[]` `{}` `""` `''`, bracket matching, HTML tag auto-closing, Emmet, and indentation-based code folding.
 - **Search**: find and replace in the current file, with regex and capture groups.
 - **Language servers**: completion, hover, go-to-definition, diagnostics, and formatting (also on save). Servers start automatically when installed. A missing or crashed server never blocks editing.
-- **Syntax highlighting** (tree-sitter): Rust, C, Python, JavaScript, TypeScript (and TSX), HTML, CSS, JSON, TOML, Markdown, PHP.
+- **Syntax highlighting** (tree-sitter): Rust, C, Python, JavaScript, TypeScript (and TSX), HTML (and Vue), CSS, JSON, TOML, Markdown, PHP, Go.
 - **Tabs, fuzzy file picker, command palette**, dark and light themes, configurable key bindings.
 - **Safety**: backup copies of unsaved work, restored after a crash. Session (open tabs, cursor positions) restored on restart.
 
@@ -64,9 +64,10 @@ IDE starts the server for the file you open if it finds it on your `PATH`:
 | Rust | rust-analyzer | `rustup component add rust-analyzer` |
 | C | clangd | `sudo apt install clangd` |
 | Python | pyright | `npm install -g pyright` |
-| HTML, CSS, JSON | vscode-langservers-extracted | `npm install -g vscode-langservers-extracted` |
+| HTML (and `.vue`), CSS, JSON | vscode-langservers-extracted | `npm install -g vscode-langservers-extracted` |
 | JavaScript, TypeScript | typescript-language-server | `npm install -g typescript typescript-language-server` |
 | PHP | intelephense | `npm install -g intelephense` |
+| Go | gopls | `go install golang.org/x/tools/gopls@latest` |
 | Emmet (HTML, CSS, PHP) | emmet-language-server | `npm install -g @olrtg/emmet-language-server` |
 
 ### 5. Run it
