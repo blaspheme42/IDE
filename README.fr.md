@@ -20,6 +20,8 @@ cargo install --path crates/ide-app   # installe le binaire `ide` dans ~/.cargo/
 ide ~/mon-projet
 ```
 
+Langages colorés : Rust, C, Python, JavaScript, TypeScript (et TSX), HTML (et Vue), CSS, JSON, TOML, Markdown, PHP, Go.
+
 Serveurs de langage (facultatifs, démarrés automatiquement s'ils sont installés) :
 
 | Langage | Serveur | Installation |
@@ -27,8 +29,9 @@ Serveurs de langage (facultatifs, démarrés automatiquement s'ils sont install�
 | Rust | rust-analyzer | `rustup component add rust-analyzer` |
 | C | clangd | paquet `clangd` |
 | Python | pyright | `npm install -g pyright` |
-| HTML, CSS, JSON | vscode-*-language-server | `npm install -g vscode-langservers-extracted` |
+| HTML (et `.vue`), CSS, JSON | vscode-*-language-server | `npm install -g vscode-langservers-extracted` |
 | PHP | intelephense | `npm install -g intelephense` |
+| Go | gopls | `go install golang.org/x/tools/gopls@latest` |
 | JavaScript, TypeScript | typescript-language-server | `npm install -g typescript typescript-language-server` |
 | Emmet (HTML, CSS, PHP) | emmet-language-server, en plus du serveur du langage | `npm install -g @olrtg/emmet-language-server` |
 

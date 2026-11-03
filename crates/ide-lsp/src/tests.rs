@@ -62,16 +62,23 @@ fn path() -> &'static Path {
 #[tokio::test]
 async fn initialize_puis_initialized() {
     let (c, _rx, mut s) = setup(TIMEOUT);
-    let (res, ()) = tokio::join!(c.initialize(Path::new("/tmp/projet")), async {
-        let req = s.answer("initialize", json!({ "capabilities": {} })).await;
-        let p = &req["params"];
-        assert_eq!(p["rootUri"], "file:///tmp/projet");
-        assert_eq!(
-            p["capabilities"]["general"]["positionEncodings"],
-            json!(["utf-16"])
-        );
-        assert_eq!(s.recv().await["method"], "initialized");
-    });
+    let (res, ()) = tokio::join!(
+        c.initialize(
+            Path::new("/tmp/projet"),
+            json!({ "provideFormatter": true })
+        ),
+        async {
+            let req = s.answer("initialize", json!({ "capabilities": {} })).await;
+            let p = &req["params"];
+            assert_eq!(p["rootUri"], "file:///tmp/projet");
+            assert_eq!(p["initializationOptions"]["provideFormatter"], true);
+            assert_eq!(
+                p["capabilities"]["general"]["positionEncodings"],
+                json!(["utf-16"])
+            );
+            assert_eq!(s.recv().await["method"], "initialized");
+        }
+    );
     res.unwrap();
 }
 

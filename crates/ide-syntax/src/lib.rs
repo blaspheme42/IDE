@@ -24,6 +24,7 @@ pub enum Language {
     Toml,
     Markdown,
     Php,
+    Go,
 }
 
 impl Language {
@@ -40,12 +41,14 @@ impl Language {
             "js" | "mjs" | "cjs" | "jsx" => Self::JavaScript,
             "ts" | "mts" | "cts" => Self::TypeScript,
             "tsx" => Self::Tsx,
-            "html" | "htm" => Self::Html,
+            // Vue : coloration et serveur HTML (pas de grammaire Vue dédiée).
+            "html" | "htm" | "vue" => Self::Html,
             "css" => Self::Css,
             "json" => Self::Json,
             "toml" => Self::Toml,
             "md" | "markdown" => Self::Markdown,
             "php" | "phtml" => Self::Php,
+            "go" => Self::Go,
             _ => return None,
         })
     }
@@ -65,6 +68,7 @@ impl Language {
             Self::Toml => "TOML",
             Self::Markdown => "Markdown",
             Self::Php => "PHP",
+            Self::Go => "Go",
         }
     }
 
@@ -130,6 +134,10 @@ impl Language {
             Self::Php => (
                 tree_sitter_php::LANGUAGE_PHP.into(),
                 tree_sitter_php::HIGHLIGHTS_QUERY.into(),
+            ),
+            Self::Go => (
+                tree_sitter_go::LANGUAGE.into(),
+                tree_sitter_go::HIGHLIGHTS_QUERY.into(),
             ),
         }
     }

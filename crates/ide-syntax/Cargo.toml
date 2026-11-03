@@ -19,6 +19,7 @@ tree-sitter-json.workspace = true
 tree-sitter-toml-ng.workspace = true
 tree-sitter-md.workspace = true
 tree-sitter-php.workspace = true
+tree-sitter-go.workspace = true
 
 [lints]
 workspace = true

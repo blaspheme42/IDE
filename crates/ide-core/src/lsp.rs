@@ -100,6 +100,7 @@ pub fn default_servers() -> Vec<LspServer> {
         s("javascript", "typescript-language-server", &["--stdio"]),
         s("typescript", "typescript-language-server", &["--stdio"]),
         s("tsx", "typescript-language-server", &["--stdio"]),
+        s("go", "gopls", &[]),
     ]
 }
 
