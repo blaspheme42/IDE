@@ -5,6 +5,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 ## [Non publié]
 
 ### Ajouté
+- Paires automatiques : taper `(`, `[`, `{`, `"` ou `'` insère la fermante derrière le curseur ; taper la fermante déjà présente la saute, et `Retour arrière` entre une paire vide retire les deux. Guillemets seulement hors d'un mot (`l'arbre`) ; pas de `'` en Rust.
 - HTML et PHP : taper le `>` d'une balise ouvrante insère sa fermante (`<div>|</div>`), sauf éléments vides (`<br>`, `<img>`…) et `/>`.
 - Parenthèse, crochet ou accolade sous le curseur (ou juste avant) mis en surbrillance avec son vis-à-vis.
 - Mise en page à la sauvegarde (`Ctrl+S`) par le serveur de langage ; `format_on_save = false` dans `[editor]` pour la couper. Sans serveur, ou si l'on tape pendant la mise en page, le fichier est sauvegardé tel quel.

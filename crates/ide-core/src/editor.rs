@@ -398,7 +398,9 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     let ext = k.mods.shift;
     match k.key {
         Key::Char(c) if !c.is_control() => {
-            doc.insert_char(c);
+            if !auto_pair(doc, c) {
+                doc.insert_char(c);
+            }
             if c == '>' {
                 close_tag(doc);
             }
@@ -410,7 +412,19 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
                 doc.tab();
             }
         }
-        Key::Backspace => doc.backspace(),
+        Key::Backspace => {
+            // Entre une paire vide `(|)` : retire les deux.
+            let cur = doc.cursor();
+            let rope = doc.rope();
+            if doc.selection().is_none()
+                && cur > 0
+                && PAIRS.contains(&(rope.char(cur - 1), rope.get_char(cur).unwrap_or('\0')))
+            {
+                doc.edit(cur - 1..cur + 1, "");
+            } else {
+                doc.backspace();
+            }
+        }
         Key::Delete => doc.delete(),
         Key::Left => doc.move_left(ext),
         Key::Right => doc.move_right(ext),
@@ -433,6 +447,40 @@ fn scroll_to_cursor(state: &mut State) {
     let w = usize::from(w.saturating_sub(gutter_width(&state.doc))).max(1);
     state.scroll_line = state.scroll_line.clamp(line.saturating_sub(h - 1), line);
     state.scroll_col = state.scroll_col.clamp(col.saturating_sub(w - 1), col);
+}
+
+const PAIRS: [(char, char); 5] = [('(', ')'), ('[', ']'), ('{', '}'), ('"', '"'), ('\'', '\'')];
+
+/// Paires automatiques : une ouvrante insère sa fermante derrière le curseur, et taper
+/// une fermante déjà présente juste après le curseur la saute. `false` si frappe normale.
+/// Guillemets seulement hors d'un mot (`l'arbre`), et pas `'` en Rust (durées de vie `'a`).
+fn auto_pair(doc: &mut Document, c: char) -> bool {
+    if doc.selection().is_some() {
+        return false;
+    }
+    let cur = doc.cursor();
+    let rope = doc.rope();
+    let next = rope.get_char(cur);
+    let quote = matches!(c, '"' | '\'');
+    if PAIRS.iter().any(|&(_, close)| close == c) && next == Some(c) {
+        doc.set_cursor(cur + 1, false);
+        return true;
+    }
+    let Some(&(_, close)) = PAIRS.iter().find(|&&(open, _)| open == c) else {
+        return false;
+    };
+    let word = |ch: Option<char>| ch.is_some_and(|ch| ch.is_alphanumeric() || ch == '_');
+    let prev = cur.checked_sub(1).map(|i| rope.char(i));
+    let rust = doc
+        .path
+        .as_ref()
+        .is_some_and(|p| p.extension().is_some_and(|e| e == "rs"));
+    if word(next) || (quote && (word(prev) || (c == '\'' && rust))) {
+        return false;
+    }
+    doc.edit(cur..cur, &format!("{c}{close}"));
+    doc.set_cursor(cur + 1, false);
+    true
 }
 
 fn is_html(doc: &Document) -> bool {
@@ -856,10 +904,10 @@ mod tests {
         };
         update(&mut s, altgr('{'));
         update(&mut s, altgr('€'));
-        assert_eq!(s.doc.rope().to_string(), "{€");
+        assert_eq!(s.doc.rope().to_string(), "{€}");
         // Une vraie combinaison Ctrl+Alt+lettre reste un raccourci.
         update(&mut s, altgr('x'));
-        assert_eq!(s.doc.rope().to_string(), "{€");
+        assert_eq!(s.doc.rope().to_string(), "{€}");
     }
 
     #[test]
@@ -941,6 +989,53 @@ mod tests {
         assert_eq!(s.scroll_line, 17);
         update(&mut s, souris(MouseKind::Down, 36, 2));
         assert_eq!(s.doc.cursor_line_col(), (18, 0));
+    }
+
+    #[test]
+    fn paires_automatiques() {
+        let tape = |path: &str, text: &str| {
+            let mut s = State::default();
+            update(
+                &mut s,
+                Event::FileOpened {
+                    path: path.into(),
+                    text: String::new(),
+                },
+            );
+            for c in text.chars() {
+                update(
+                    &mut s,
+                    k(if c == '\x08' {
+                        Key::Backspace
+                    } else {
+                        Key::Char(c)
+                    }),
+                );
+            }
+            let mut t = s.doc.rope().to_string();
+            t.insert(s.doc.rope().char_to_byte(s.doc.cursor()), '|');
+            t
+        };
+        assert_eq!(tape("/x/a.c", "f("), "f(|)");
+        assert_eq!(tape("/x/a.c", "f(x)"), "f(x)|");
+        assert_eq!(tape("/x/a.c", "{[\""), "{[\"|\"]}");
+        assert_eq!(tape("/x/a.c", "a = \"b\";"), "a = \"b\";|");
+        assert_eq!(tape("/x/a.c", "('"), "('|')");
+        assert_eq!(tape("/x/a.md", "l'arbre"), "l'arbre|");
+        assert_eq!(tape("/x/a.rs", "<'a"), "<'a|");
+        assert_eq!(tape("/x/a.c", "(\x08"), "|");
+        assert_eq!(tape("/x/a.c", "a("), "a(|)");
+        // Devant un mot : pas de fermante.
+        let mut s = State::default();
+        update(
+            &mut s,
+            Event::FileOpened {
+                path: "/x/a.c".into(),
+                text: "x".into(),
+            },
+        );
+        update(&mut s, k(Key::Char('(')));
+        assert_eq!(s.doc.rope().to_string(), "(x");
     }
 
     #[test]
