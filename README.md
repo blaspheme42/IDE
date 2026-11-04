@@ -10,7 +10,7 @@
 
 ![IDE editing a Rust project: file explorer, tabs, folded block, rust-analyzer completion and diagnostics](docs/screenshot.png)
 
-> **Status: 1.2, usable for daily editing.** Tested on Linux. macOS is built by CI but not tested by hand. On Windows, use [WSL](#windows-wsl). The interface (status messages, menus, prompts) is currently in French.
+> **Status: 1.3, usable for daily editing.** Tested on Linux. macOS is built by CI but not tested by hand. On Windows, use [WSL](#windows-wsl). The interface (status messages, menus, prompts) is currently in French.
 
 ## Features
 

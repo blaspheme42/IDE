@@ -4,6 +4,8 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+## [1.3.0] — 2026-11-04 · Terminal intégré, onglets et vingt thèmes
+
 ### Ajouté
 - Seize thèmes de plus, vingt en tout : `solarized-dark`, `nord`, `dracula`, `monokai`, `tokyo-night`, `catppuccin-latte`, `rose`, `automne` (marron, vert, orange), `one-dark`, `catppuccin-mocha`, `rose-pine`, `everforest`, `kanagawa`, `ayu-mirage`, `gruvbox-light` et `github-light`, couleurs ajustées pour garder les contrastes minimaux.
 - Le dernier thème choisi (`Alt+T` ou palette) est gardé pour le prochain lancement, dans `<état>/ide/theme`, et passe avant `theme` de la configuration.
