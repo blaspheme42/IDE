@@ -276,6 +276,11 @@ pub static SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("Ctrl+Shift+M", "Panneau Problèmes"),
             ("Ctrl+Ù / Alt+J", "Terminal intégré"),
+            ("Alt+N", "Terminal, avec le focus : nouvel onglet"),
+            (
+                "Alt+Page suiv. / Alt+Page préc.",
+                "Terminal, avec le focus : onglet suivant / précédent",
+            ),
             ("F1", "Cet écran d'aide"),
         ],
     ),

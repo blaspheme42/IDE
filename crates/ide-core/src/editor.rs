@@ -22,8 +22,10 @@ pub(crate) const WHEEL_LINES: usize = 3;
 pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     terminal::release_hidden_focus(state);
     // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite. Pareil pour ce
-    // qui vise le terminal, sauf si le document bouge (rechargement disque, commande de la palette).
+    // qui vise le terminal, sauf si le document bouge (rechargement disque, commande de la palette)
+    // ou si le panneau se ferme (taille de l'éditeur).
     let keep_view = state.focus == crate::Focus::Terminal
+        || matches!(&event, Event::TerminalExited { .. })
         || matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown) || terminal::owns_mouse(state, *m));
     let version = state.doc.version();
     let cursor = state.doc.cursor();
@@ -132,7 +134,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
         }
         Event::Paste(text) if state.focus == crate::Focus::Terminal && state.help.is_none() => {
             state.terminal.scroll = 0;
-            vec![Command::TerminalPaste(text)]
+            let id = state.terminal.active_id();
+            id.map(|id| Command::TerminalPaste(id, text))
+                .into_iter()
+                .collect()
         }
         Event::Paste(text) if state.focus == crate::Focus::Explorer => {
             explorer::paste(state, &text);
@@ -167,8 +172,8 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
         Event::Tick => vec![],
-        Event::TerminalExited { error } => {
-            terminal::exited(state, error);
+        Event::TerminalExited { id, error } => {
+            terminal::exited(state, id, error);
             vec![]
         }
         Event::BackupFound { path, text } => {
