@@ -258,7 +258,7 @@ mod tests {
             assert!(errors.is_empty(), "{errors:?}");
             assert_eq!(s.theme, t);
         }
-        let (s, errors) = load(Some("[editor]\ntheme = \"monokai\"\n"), None)?;
+        let (s, errors) = load(Some("[editor]\ntheme = \"inconnu\"\n"), None)?;
         assert_eq!(s.theme, "dark");
         assert!(errors[0].contains("\"solarized-light\""), "{errors:?}");
         Ok(())

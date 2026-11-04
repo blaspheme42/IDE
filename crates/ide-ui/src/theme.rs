@@ -51,6 +51,29 @@ pub struct Theme {
     syntax: Vec<(&'static str, Style)>,
 }
 
+/// Couleurs de base d'un thème, voir `Theme::from_palette`.
+struct Palette {
+    name: &'static str,
+    bg: u32,
+    panel: u32,
+    selection: u32,
+    fg: u32,
+    comment: u32,
+    border: u32,
+    accent: u32,
+    on_accent: u32,
+    red: u32,
+    yellow: u32,
+    green: u32,
+    blue: u32,
+    keyword: u32,
+    function: u32,
+    kind: u32,
+    string: u32,
+    number: u32,
+    constant: u32,
+}
+
 impl Theme {
     /// Thème sombre, d'après « Dark+ » de VSCode.
     pub fn dark() -> Self {
@@ -257,6 +280,208 @@ impl Theme {
         }
     }
 
+    /// Thème sombre « Solarized Dark » (palette d'Ethan Schoonover, licence MIT), texte et accents éclaircis pour le contraste.
+    pub fn solarized_dark() -> Self {
+        Self::from_palette(Palette {
+            name: "solarized-dark",
+            bg: 0x002b36,
+            panel: 0x073642,
+            selection: 0x17505f,
+            fg: 0xd5dcd8,
+            comment: 0x7f9399,
+            border: 0x2d5560,
+            accent: 0x1b65a6,
+            on_accent: 0xfdf6e3,
+            red: 0xef5350,
+            yellow: 0xc99a00,
+            green: 0x9aae00,
+            blue: 0x4aa3e0,
+            keyword: 0x9aae00,
+            function: 0x4aa3e0,
+            kind: 0xc99a00,
+            string: 0x2fb5aa,
+            number: 0xe0609d,
+            constant: 0xe8703a,
+        })
+    }
+
+    /// Thème sombre « Nord » (palette d'Arctic Ice Studio, licence MIT), commentaires et rouge éclaircis pour le contraste.
+    pub fn nord() -> Self {
+        Self::from_palette(Palette {
+            name: "nord",
+            bg: 0x2e3440,
+            panel: 0x3b4252,
+            selection: 0x434c5e,
+            fg: 0xeceff4,
+            comment: 0x98a4b8,
+            border: 0x4c566a,
+            accent: 0x88c0d0,
+            on_accent: 0x2e3440,
+            red: 0xd8848c,
+            yellow: 0xebcb8b,
+            green: 0xa3be8c,
+            blue: 0x81a1c1,
+            keyword: 0x81a1c1,
+            function: 0x88c0d0,
+            kind: 0x8fbcbb,
+            string: 0xa3be8c,
+            number: 0xb48ead,
+            constant: 0xd08770,
+        })
+    }
+
+    /// Thème sombre « Dracula » (palette de Zeno Rocha, licence MIT), commentaires éclaircis pour le contraste.
+    pub fn dracula() -> Self {
+        Self::from_palette(Palette {
+            name: "dracula",
+            bg: 0x282a36,
+            panel: 0x343746,
+            selection: 0x44475a,
+            fg: 0xf8f8f2,
+            comment: 0x8290bd,
+            border: 0x44475a,
+            accent: 0xbd93f9,
+            on_accent: 0x282a36,
+            red: 0xff5555,
+            yellow: 0xf1fa8c,
+            green: 0x50fa7b,
+            blue: 0x8be9fd,
+            keyword: 0xff79c6,
+            function: 0x50fa7b,
+            kind: 0x8be9fd,
+            string: 0xf1fa8c,
+            number: 0xbd93f9,
+            constant: 0xffb86c,
+        })
+    }
+
+    /// Thème sombre d'après la palette « Monokai » de Wimer Hazenberg, rouge et commentaires éclaircis pour le contraste.
+    pub fn monokai() -> Self {
+        Self::from_palette(Palette {
+            name: "monokai",
+            bg: 0x272822,
+            panel: 0x3e3d32,
+            selection: 0x49483e,
+            fg: 0xf8f8f2,
+            comment: 0xa5a28c,
+            border: 0x49483e,
+            accent: 0xa6e22e,
+            on_accent: 0x272822,
+            red: 0xff5c8a,
+            yellow: 0xe6db74,
+            green: 0xa6e22e,
+            blue: 0x66d9ef,
+            keyword: 0xff5c8a,
+            function: 0xa6e22e,
+            kind: 0x66d9ef,
+            string: 0xe6db74,
+            number: 0xae81ff,
+            constant: 0xfd971f,
+        })
+    }
+
+    /// Thème sombre « Tokyo Night » (palette d'enkia, licence MIT), commentaires éclaircis pour le contraste.
+    pub fn tokyo_night() -> Self {
+        Self::from_palette(Palette {
+            name: "tokyo-night",
+            bg: 0x1a1b26,
+            panel: 0x24283b,
+            selection: 0x33467c,
+            fg: 0xc0caf5,
+            comment: 0x7f88b0,
+            border: 0x3b4261,
+            accent: 0x7aa2f7,
+            on_accent: 0x1a1b26,
+            red: 0xf7768e,
+            yellow: 0xe0af68,
+            green: 0x9ece6a,
+            blue: 0x7aa2f7,
+            keyword: 0xbb9af7,
+            function: 0x7aa2f7,
+            kind: 0x2ac3de,
+            string: 0x9ece6a,
+            number: 0xff9e64,
+            constant: 0xff9e64,
+        })
+    }
+
+    /// Thème clair « Catppuccin Latte » (palette de Catppuccin, licence MIT), accents assombris pour le contraste.
+    pub fn catppuccin_latte() -> Self {
+        Self::from_palette(Palette {
+            name: "catppuccin-latte",
+            bg: 0xeff1f5,
+            panel: 0xe6e9ef,
+            selection: 0xccd0da,
+            fg: 0x4c4f69,
+            comment: 0x70738a,
+            border: 0xbcc0cc,
+            accent: 0x1a5cdc,
+            on_accent: 0xeff1f5,
+            red: 0xd20f39,
+            yellow: 0x8f6200,
+            green: 0x2f7d1a,
+            blue: 0x1e66f5,
+            keyword: 0x8839ef,
+            function: 0x1e66f5,
+            kind: 0x8f6200,
+            string: 0x2f7d1a,
+            number: 0xc2410c,
+            constant: 0xc2410c,
+        })
+    }
+
+    /// Thème complet à partir d'une palette ; les thèmes écrits à la main ci-dessus règlent chaque
+    /// couleur, ceux-ci partagent une correspondance.
+    fn from_palette(p: Palette) -> Self {
+        Self {
+            name: p.name,
+            background: hex(p.bg),
+            foreground: hex(p.fg),
+            current_line: hex(p.panel),
+            selection: bg(p.selection),
+            search_match: bg(p.selection).add_modifier(Modifier::UNDERLINED),
+            search_current: fg(p.bg).bg(hex(p.yellow)),
+            bracket_match: bg(p.selection).add_modifier(Modifier::BOLD),
+            gutter: hex(p.comment),
+            gutter_current: fg(p.fg).add_modifier(Modifier::BOLD),
+            border: hex(p.border),
+            border_focus: fg(p.accent).add_modifier(Modifier::BOLD),
+            explorer_selected: fg(p.on_accent).bg(hex(p.accent)),
+            explorer_selected_unfocused: bg(p.panel),
+            tab_active: fg(p.fg).bg(hex(p.bg)).add_modifier(Modifier::BOLD),
+            tab_inactive: fg(p.fg).bg(hex(p.panel)),
+            status_bar: fg(p.on_accent).bg(hex(p.accent)),
+            error: hex(p.red),
+            warning: hex(p.yellow),
+            muted: hex(p.comment),
+            git_added: hex(p.green),
+            git_modified: hex(p.blue),
+            git_deleted: hex(p.red),
+            syntax: vec![
+                ("keyword", fg(p.keyword)),
+                ("function", fg(p.function)),
+                ("type", fg(p.kind)),
+                ("string", fg(p.string)),
+                ("number", fg(p.number)),
+                ("comment", fg(p.comment).add_modifier(Modifier::ITALIC)),
+                ("constant", fg(p.constant)),
+                ("variable", fg(p.fg)),
+                ("property", fg(p.function)),
+                ("operator", fg(p.fg)),
+                ("punctuation", fg(p.comment)),
+                ("attribute", fg(p.keyword)),
+                ("tag", fg(p.keyword)),
+                ("label", fg(p.number)),
+                ("namespace", fg(p.kind)),
+                ("macro", fg(p.constant)),
+                ("escape", fg(p.red)),
+                ("heading", fg(p.keyword).add_modifier(Modifier::BOLD)),
+                ("link", fg(p.blue).add_modifier(Modifier::UNDERLINED)),
+                ("emphasis", Style::new().add_modifier(Modifier::ITALIC)),
+            ],
+        }
+    }
+
     /// Thème embarqué par son nom, un de `ide_core::THEMES`.
     pub fn by_name(name: &str) -> Option<Self> {
         match name {
@@ -264,6 +489,12 @@ impl Theme {
             "light" => Some(Self::light()),
             "gruvbox" => Some(Self::gruvbox()),
             "solarized-light" => Some(Self::solarized_light()),
+            "solarized-dark" => Some(Self::solarized_dark()),
+            "nord" => Some(Self::nord()),
+            "dracula" => Some(Self::dracula()),
+            "monokai" => Some(Self::monokai()),
+            "tokyo-night" => Some(Self::tokyo_night()),
+            "catppuccin-latte" => Some(Self::catppuccin_latte()),
             _ => None,
         }
     }

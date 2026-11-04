@@ -5,6 +5,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 ## [Non publié]
 
 ### Ajouté
+- Six thèmes de plus, dix en tout : `solarized-dark`, `nord`, `dracula`, `monokai`, `tokyo-night` et `catppuccin-latte`, couleurs ajustées pour garder les contrastes minimaux.
 - Terminal intégré (F-60) : panneau bas, shells lancés dans le dossier du projet. `Ctrl+ù` (terminaux à protocole Kitty : kitty, foot, Ghostty, Alacritty, WezTerm) ou `Alt+J` (partout), aussi « Terminal : ouvrir / aller / fermer » dans la palette et `toggle_terminal` dans `[keys]` : fermé, l'ouvre et prend le focus ; ouvert sans focus, prend le focus ; ouvert avec focus, le ferme et rend le focus à l'éditeur. Avec le focus, tout va au shell sauf la bascule et les touches d'onglets : `Ctrl+Q`, `Ctrl+P` et `F1` n'agissent pas sur l'IDE. Fermer le panneau garde les shells. Clic dans le panneau pour le focus, molette pour l'historique.
 - Onglets du terminal intégré : plusieurs shells dans le panneau, numérotés dans sa bordure haute. Avec le focus terminal, `Alt+T` ouvre un onglet, `Alt+Page suiv.` / `Alt+Page préc.` passent au suivant / précédent, en boucle (ces touches ne peuvent pas être retirées par `[keys]`, et restent inchangées ailleurs). Clic sur un numéro : active l'onglet et prend le focus. `exit` ferme son onglet, même en arrière-plan ; l'onglet voisin devient actif et le panneau ne se ferme qu'avec le dernier, un nouveau shell démarrant à la prochaine ouverture. Un échec de lancement ne ferme que l'onglet concerné, avec l'erreur au statut.
 
