@@ -6,7 +6,7 @@ IDE de terminal en Rust, inspiré de VSCode : explorateur, éditeur, coloration 
 
 ![IDE sur un projet Rust : explorateur, onglets, bloc replié, complétion rust-analyzer et diagnostic](docs/screenshot.png)
 
-**État :** version 1.2 — les 21 exigences « Must » du cahier des charges, plus les langages web (HTML, CSS, PHP, JS/TS, Emmet), la mise en page, les paires automatiques et le repli des blocs, puis l'aide F1, les marques git, les thèmes et Go. Prochaines versions : exigences « Should » (multi-curseurs, écran divisé, terminal intégré, recherche dans le projet…).
+**État :** version 1.2 — les 21 exigences « Must » du cahier des charges, plus les langages web (HTML, CSS, PHP, JS/TS, Emmet), la mise en page, les paires automatiques et le repli des blocs, puis l'aide F1, les marques git, les thèmes et Go. Prochaines versions : exigences « Should » (multi-curseurs, écran divisé, recherche dans le projet…).
 
 ## Prérequis
 
@@ -119,6 +119,7 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 - Onglets : `Ctrl+W` ou clic sur `×` / `●` fermer (deux fois si modifié), `Ctrl+PageSuiv` / `Ctrl+PagePréc` suivant / précédent, `Alt+1`…`Alt+9`.
 - Palettes : `Ctrl+P` ouvrir un fichier du projet (recherche floue), `Ctrl+Shift+P` (ou `Ctrl+P` puis `>`) toutes les commandes.
 - Code (serveur de langage démarré automatiquement, voir Installation) : complétion à la frappe ou `Ctrl+Espace` (`Entrée`/`Tab` accepte), `Ctrl+K` infobulle, `F12` aller à la définition, `Alt+Shift+F` mettre en page (aussi `Ctrl+0` dans kitty, WezTerm, foot, Ghostty, Alacritty), `F8` / `Shift+F8` problème suivant / précédent, `Ctrl+Shift+M` panneau Problèmes. Un serveur absent ou planté n'empêche jamais d'éditer.
+- Terminal intégré (panneau bas, un seul shell lancé dans le dossier du projet) : `Ctrl+ù` (kitty, WezTerm, foot, Ghostty, Alacritty) ou `Alt+J` (partout), aussi « Terminal : ouvrir / aller / fermer » dans la palette et `toggle_terminal` dans `[keys]`. Fermé, il s'ouvre et prend le focus ; ouvert sans focus, il prend le focus ; ouvert avec focus, il se ferme et rend le focus à l'éditeur. Avec le focus, tout va au shell sauf la bascule : `Ctrl+Q`, `Ctrl+P` et `F1` n'agissent pas sur l'IDE. Fermer le panneau garde le shell ; `exit` ferme le panneau et un nouveau shell démarre à la prochaine ouverture. Clic dans le panneau pour le focus, molette pour l'historique.
 - Fichier modifié par un autre programme : rechargé automatiquement s'il n'a pas de modifications, sinon `Alt+R` recharge, `Alt+K` garde votre version.
 - `Ctrl+Q` : quitter ; s'il y a des modifications non sauvegardées, `Ctrl+Q` deux fois pour quitter sans sauvegarder.
 - Logs : `$XDG_STATE_HOME/ide/ide.log` (par défaut `~/.local/state/ide/ide.log`).
