@@ -1306,6 +1306,49 @@ mod tests {
     }
 
     #[test]
+    fn panneau_a_trois_onglets() {
+        let t = Theme::dark();
+        let mut s = terminal_ouvert();
+        s.terminal.tabs = vec![4, 7, 9];
+        s.terminal.active = 1;
+        let b = draw(&s);
+        insta::assert_snapshot!(b);
+        assert!(ligne(&b, 12).contains("│ TERMINAL  1  2  3 ─"));
+        assert!(a_style(&b.buffer()[(30 + 10, 12)], t.tab_inactive));
+        assert!(a_style(&b.buffer()[(30 + 13, 12)], t.tab_active));
+        assert!(a_style(&b.buffer()[(30 + 16, 12)], t.tab_inactive));
+    }
+
+    /// Chaque colonne que le rendu met en évidence pour l'onglet actif est celle que le clic lui
+    /// attribue, libellés à deux chiffres compris.
+    #[test]
+    fn rendu_et_clic_d_accord_sur_les_colonnes() {
+        let t = Theme::dark();
+        let mut s = terminal_ouvert();
+        s.terminal.tabs = (0..12).collect();
+        for active in 0..12 {
+            s.terminal.active = active;
+            let b = draw(&s);
+            for col in 0..50 {
+                assert_eq!(
+                    a_style(&b.buffer()[(30 + col, 12)], t.tab_active),
+                    ide_core::terminal_tab_at(&s.terminal, col) == Some(active),
+                    "onglet {active}, colonne {col}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn onglets_plus_larges_que_le_panneau() {
+        let mut s = terminal_ouvert();
+        s.terminal.tabs = (0..500).collect();
+        s.terminal.active = 499;
+        let b = draw(&s);
+        assert!(ligne(&b, 12).contains(" TERMINAL  1  2 "));
+    }
+
+    #[test]
     fn terminal_bordure_selon_le_focus() {
         let t = Theme::dark();
         let mut s = terminal_ouvert();
@@ -1463,6 +1506,7 @@ mod tests {
                 s.height = h;
                 s.problems_open = problemes;
                 s.terminal.lines[0] = vec![cellules(&"x".repeat(300))];
+                s.terminal.tabs = (0..50).collect();
                 s.terminal.cursor = Some((0, 0));
                 let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
                 t.draw(|f| render_with(&s, f, &Theme::dark())).unwrap();

@@ -1,5 +1,6 @@
-//! Terminal intégré (F-60) : un shell dans un PTY, émulé par vt100. Un thread lit, un autre écrit :
-//! la boucle ne bloque jamais sur le shell ; elle recopie la grille dans l'état avant chaque rendu.
+//! Terminal intégré (F-60) : un shell par onglet, dans un PTY émulé par vt100. Par shell, un thread
+//! lit, un autre écrit : la boucle ne bloque jamais ; elle recopie la grille de l'onglet actif dans
+//! l'état avant chaque rendu.
 
 use std::io::{Read, Write};
 use std::num::NonZeroU16;
@@ -20,7 +21,8 @@ pub struct Term {
     command: CommandBuilder,
     /// Unique pour toute la vie de `Term` : la boucle attend dessus, quel que soit le shell.
     output: Arc<Notify>,
-    session: Option<Session>,
+    /// Par identifiant d'onglet ; celui qui n'a pas encore de shell n'y est pas.
+    sessions: Vec<(u32, Session)>,
 }
 
 /// Un shell lancé. Parser et `exited` lui sont propres : le lecteur d'un ancien shell, qui peut
@@ -88,7 +90,7 @@ impl Term {
         Self {
             command,
             output: Arc::new(Notify::new()),
-            session: None,
+            sessions: vec![],
         }
     }
 
@@ -96,15 +98,20 @@ impl Term {
         self.output.clone()
     }
 
-    /// À appeler avant chaque rendu : fin du shell, lancement, taille, copie de la grille.
+    fn session(&self, id: u32) -> Option<&Session> {
+        let mut sessions = self.sessions.iter();
+        sessions.find(|(tab, _)| *tab == id).map(|(_, s)| s)
+    }
+
+    /// À appeler avant chaque rendu : fin des shells, y compris en arrière-plan, puis pour l'onglet
+    /// actif seulement lancement, taille et copie de la grille.
     pub fn sync(&mut self, state: &mut State) {
-        if let Some(mut child) = self.session.take_if(|s| s.finished()).map(|s| s.child) {
+        for (id, Session { mut child, .. }) in self.sessions.extract_if(.., |(_, s)| s.finished()) {
             // Après EOF, le shell peut vivre encore un instant : pas d'attente dans la boucle.
             std::thread::spawn(move || {
                 let _ = child.wait();
             });
-            ide_core::update(state, Event::TerminalExited { error: None });
-            return;
+            ide_core::update(state, Event::TerminalExited { id, error: None });
         }
         if !state.terminal.open {
             return;
@@ -113,19 +120,22 @@ impl Term {
         let (Some(c), Some(r)) = (NonZeroU16::new(cols), NonZeroU16::new(rows)) else {
             return;
         };
-        if self.session.is_none() {
+        // Boucle : un échec ferme l'onglet et en active un autre.
+        let session = loop {
+            let Some(id) = state.terminal.active_id() else {
+                return;
+            };
+            if let Some(i) = self.sessions.iter().position(|(tab, _)| *tab == id) {
+                break &mut self.sessions[i].1;
+            }
             match self.spawn(r, c) {
-                Ok(session) => self.session = Some(session),
+                Ok(session) => self.sessions.push((id, session)),
                 Err(e) => {
                     tracing::warn!("lancement du shell : {e:#}");
                     let error = Some(format!("{e:#}"));
-                    ide_core::update(state, Event::TerminalExited { error });
-                    return;
+                    ide_core::update(state, Event::TerminalExited { id, error });
                 }
             }
-        }
-        let Some(session) = &mut self.session else {
-            return;
         };
         if session.size != (cols, rows) {
             session.size = (cols, rows);
@@ -151,27 +161,32 @@ impl Term {
             (!screen.hide_cursor() && state.terminal.scroll == 0).then(|| cursor(screen));
     }
 
-    pub fn key(&mut self, k: KeyInput) {
-        if let Some(s) = &self.session {
+    pub fn key(&mut self, id: u32, k: KeyInput) {
+        if let Some(s) = self.session(id) {
             let bytes = encode(k, s.parser().screen().application_cursor());
             let _ = s.writer.send(bytes);
         }
     }
 
-    pub fn paste(&mut self, text: &str) {
-        if let Some(s) = &self.session {
+    pub fn paste(&mut self, id: u32, text: &str) {
+        if let Some(s) = self.session(id) {
             let bytes = paste_bytes(text, s.parser().screen().bracketed_paste());
             let _ = s.writer.send(bytes);
         }
     }
 
-    /// SIGHUP, puis SIGKILL après 200 ms au pire si le shell résiste.
+    /// SIGHUP, puis SIGKILL après 200 ms au pire si un shell résiste ; tous en parallèle, pour ne
+    /// pas additionner ces délais.
     pub fn shutdown(&mut self) {
-        if let Some(mut s) = self.session.take()
-            && let Err(e) = s.child.kill()
-        {
-            tracing::warn!("arrêt du shell : {e}");
-        }
+        std::thread::scope(|scope| {
+            for (_, mut s) in self.sessions.drain(..) {
+                scope.spawn(move || {
+                    if let Err(e) = s.child.kill() {
+                        tracing::warn!("arrêt du shell : {e}");
+                    }
+                });
+            }
+        });
     }
 
     fn spawn(&self, rows: NonZeroU16, cols: NonZeroU16) -> anyhow::Result<Session> {
@@ -562,15 +577,34 @@ mod tests {
                 ..State::default()
             };
             s.explorer.visible = false;
-            s.terminal.open = true;
+            ouvre(&mut s);
             s
         }
 
-        fn tape(term: &mut Term, texte: &str) {
-            for c in texte.chars() {
-                term.key(nu(Key::Char(c)));
+        fn ouvre(s: &mut State) {
+            let alt_j = touche(Key::Char('j'), false, true, false);
+            ide_core::update(s, Event::Key(alt_j));
+        }
+
+        /// Ce que fait la boucle de l'app pour une touche : `update`, puis les commandes, sans `sync`.
+        fn presse(term: &mut Term, s: &mut State, k: KeyInput) {
+            for cmd in ide_core::update(s, Event::Key(k)) {
+                if let ide_core::Command::TerminalKey(id, k) = cmd {
+                    term.key(id, k);
+                }
             }
-            term.key(nu(Key::Enter));
+        }
+
+        fn tape_dans(term: &mut Term, id: u32, texte: &str) {
+            for c in texte.chars() {
+                term.key(id, nu(Key::Char(c)));
+            }
+            term.key(id, nu(Key::Enter));
+        }
+
+        /// Dans le seul shell du test.
+        fn tape(term: &mut Term, texte: &str) {
+            tape_dans(term, term.sessions[0].0, texte);
         }
 
         fn texte(s: &State) -> String {
@@ -598,7 +632,7 @@ mod tests {
             attend(&mut term, &mut s, |s| texte(s).contains("un2trois"));
             tape(&mut term, "exit");
             attend(&mut term, &mut s, |s| !s.terminal.open);
-            assert!(term.session.is_none());
+            assert!(term.sessions.is_empty());
             assert!(s.terminal.lines.is_empty());
         }
 
@@ -607,7 +641,7 @@ mod tests {
             let (mut term, mut s) = (sh(), ouvert());
             term.sync(&mut s);
             // Le lecteur seul signale la fin : le fils n'est pas repris par `try_wait` avant.
-            let exited = term.session.as_ref().map(|t| t.exited.clone());
+            let exited = term.sessions.first().map(|(_, t)| t.exited.clone());
             tape(&mut term, "exit");
             let limite = Instant::now() + Duration::from_secs(10);
             while !exited.as_ref().is_some_and(|e| e.load(Ordering::Acquire)) {
@@ -624,7 +658,7 @@ mod tests {
             // le lancement du nouveau.
             tape(&mut term, "sleep 1 & exit");
             attend(&mut term, &mut s, |s| !s.terminal.open);
-            s.terminal.open = true;
+            ouvre(&mut s);
             term.sync(&mut s);
             std::thread::sleep(Duration::from_millis(1500));
             term.sync(&mut s);
@@ -638,7 +672,7 @@ mod tests {
         fn job_de_fond_raccroche_a_la_fin_du_shell() {
             let (mut term, mut s) = (sh(), ouvert());
             term.sync(&mut s);
-            let exited = term.session.as_ref().map(|t| t.exited.clone());
+            let exited = term.sessions.first().map(|(_, t)| t.exited.clone());
             // Borné à 10 s : pas de processus laissé si le test échoue. `echo` échoue dès le raccroché.
             tape(
                 &mut term,
@@ -700,7 +734,7 @@ mod tests {
             let (mut term, mut s) = (sh(), ouvert());
             s.height = 0;
             term.sync(&mut s);
-            assert!(term.session.is_none());
+            assert!(term.sessions.is_empty());
         }
 
         #[test]
@@ -716,16 +750,134 @@ mod tests {
         fn shutdown_ne_laisse_pas_de_shell() -> anyhow::Result<()> {
             let (mut term, mut s) = (sh(), ouvert());
             term.sync(&mut s);
-            let pid = term.session.as_ref().and_then(|t| t.child.process_id());
-            let pid = pid.map(|p| p.to_string()).unwrap_or_default();
-            assert!(!pid.is_empty());
+            presse(&mut term, &mut s, alt('n'));
+            term.sync(&mut s);
+            let pids: Vec<_> = term
+                .sessions
+                .iter()
+                .filter_map(|(_, t)| t.child.process_id())
+                .collect();
+            assert_eq!(pids.len(), 2);
             term.shutdown();
-            let vivant = std::process::Command::new("kill")
-                .args(["-0", &pid])
-                .stderr(std::process::Stdio::null())
-                .status()?;
-            assert!(!vivant.success());
+            assert!(term.sessions.is_empty());
+            for pid in pids {
+                let vivant = std::process::Command::new("kill")
+                    .args(["-0", &pid.to_string()])
+                    .stderr(std::process::Stdio::null())
+                    .status()?;
+                assert!(!vivant.success());
+            }
             Ok(())
+        }
+
+        fn alt(c: char) -> KeyInput {
+            touche(Key::Char(c), false, true, false)
+        }
+
+        fn alt_page_suiv() -> KeyInput {
+            touche(Key::PageDown, false, true, false)
+        }
+
+        /// Deux shells sur leur propre sortie ; onglet actif : le second.
+        fn deux_onglets() -> (Term, State, u32, u32) {
+            let (mut term, mut s) = (sh(), ouvert());
+            term.sync(&mut s);
+            presse(&mut term, &mut s, alt('n'));
+            term.sync(&mut s);
+            let (a, b) = (s.terminal.tabs[0], s.terminal.tabs[1]);
+            (term, s, a, b)
+        }
+
+        #[test]
+        fn sortie_isolee_par_onglet() {
+            let (mut term, mut s, a, b) = deux_onglets();
+            tape_dans(&mut term, a, "echo aa$((1+1))aa");
+            tape_dans(&mut term, b, "echo bb$((1+1))bb");
+            attend(&mut term, &mut s, |s| texte(s).contains("bb2bb"));
+            assert!(!texte(&s).contains("aa2aa"));
+            presse(&mut term, &mut s, alt_page_suiv());
+            attend(&mut term, &mut s, |s| texte(s).contains("aa2aa"));
+            assert!(!texte(&s).contains("bb2bb"));
+            term.shutdown();
+        }
+
+        #[test]
+        fn touche_juste_apres_le_changement_va_au_bon_shell() {
+            let (mut term, mut s, a, b) = deux_onglets();
+            // Sans `sync` entre la bascule et la frappe : l'app n'a pas encore vu le changement.
+            presse(&mut term, &mut s, alt_page_suiv());
+            assert_eq!(s.terminal.active_id(), Some(a));
+            for c in "echo vi$((1+1))se".chars() {
+                presse(&mut term, &mut s, nu(Key::Char(c)));
+            }
+            presse(&mut term, &mut s, nu(Key::Enter));
+            attend(&mut term, &mut s, |s| texte(s).contains("vi2se"));
+            presse(&mut term, &mut s, alt_page_suiv());
+            assert_eq!(s.terminal.active_id(), Some(b));
+            term.sync(&mut s);
+            assert!(!texte(&s).contains("vi"), "{}", texte(&s));
+            term.shutdown();
+        }
+
+        #[test]
+        fn exit_en_arriere_plan_ferme_l_onglet() {
+            let (mut term, mut s, a, b) = deux_onglets();
+            tape_dans(&mut term, a, "exit");
+            attend(&mut term, &mut s, |s| s.terminal.tabs.len() == 1);
+            assert_eq!(s.terminal.active_id(), Some(b));
+            assert!(s.terminal.open);
+            assert_eq!(term.sessions.len(), 1);
+            tape_dans(&mut term, b, "echo en$((1+1))vie");
+            attend(&mut term, &mut s, |s| texte(s).contains("en2vie"));
+            term.shutdown();
+        }
+
+        #[test]
+        fn exit_de_l_actif_affiche_le_voisin_dans_le_meme_sync() {
+            let (mut term, mut s, a, b) = deux_onglets();
+            tape_dans(&mut term, a, "echo aa$((1+1))aa");
+            tape_dans(&mut term, b, "exit");
+            attend(&mut term, &mut s, |s| texte(s).contains("aa2aa"));
+            assert_eq!(s.terminal.tabs, [a]);
+            term.shutdown();
+        }
+
+        #[test]
+        fn panneau_ferme_les_shells_vivent_et_finissent() {
+            let (mut term, mut s, a, _) = deux_onglets();
+            ide_core::update(&mut s, Event::Key(alt('j')));
+            assert!(!s.terminal.open);
+            tape_dans(&mut term, a, "exit");
+            attend(&mut term, &mut s, |s| s.terminal.tabs.len() == 1);
+            assert_eq!(term.sessions.len(), 1);
+            term.shutdown();
+        }
+
+        #[test]
+        fn taille_recue_au_retour_sur_l_onglet() {
+            let (mut term, mut s, a, b) = deux_onglets();
+            s.width = 60;
+            term.sync(&mut s);
+            let (_, rows) = terminal_size(&s);
+            assert_eq!(term.session(b).map(|t| t.size), Some((60, rows)));
+            assert_eq!(term.session(a).map(|t| t.size), Some((80, rows)));
+            presse(&mut term, &mut s, alt_page_suiv());
+            term.sync(&mut s);
+            assert_eq!(term.session(a).map(|t| t.size), Some((60, rows)));
+            term.shutdown();
+        }
+
+        #[test]
+        fn echec_du_lancement_ferme_seulement_l_onglet() {
+            let (mut term, mut s) = (sh(), ouvert());
+            term.sync(&mut s);
+            term.command = CommandBuilder::new("/inexistant/shell");
+            presse(&mut term, &mut s, alt('n'));
+            term.sync(&mut s);
+            assert!(s.terminal.open);
+            assert_eq!(s.terminal.tabs.len(), 1);
+            assert!(s.status.starts_with("Terminal : "), "{}", s.status);
+            term.shutdown();
         }
     }
 }
