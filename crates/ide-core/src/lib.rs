@@ -11,6 +11,7 @@ mod lsp;
 mod palette;
 mod search;
 mod tabs;
+mod terminal;
 
 pub use document::{Document, Indent, LineEnding, TextEdit};
 pub use editor::gutter_width;
@@ -26,6 +27,9 @@ pub use palette::{
 };
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
+pub use terminal::{
+    TERMINAL_HEIGHT, TermColor, TermSpan, Terminal, terminal_height, terminal_size,
+};
 
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +197,10 @@ pub enum Event {
     },
     /// Active l'onglet ouvert sur ce chemin, s'il existe.
     ActivateTab(PathBuf),
+    /// Le shell du terminal intégré s'est terminé ; `error` : à afficher dans la barre de statut.
+    TerminalExited {
+        error: Option<String>,
+    },
 }
 
 /// Effets demandés par `update`, exécutés par l'app.
@@ -255,6 +263,9 @@ pub enum Command {
     Reload(PathBuf),
     /// Supprimer la copie de secours de ce fichier (Alt+N).
     DiscardBackup(PathBuf),
+    /// Touche pour le shell : celle réellement pressée, avant `[keys]`.
+    TerminalKey(KeyInput),
+    TerminalPaste(String),
 }
 
 /// Thèmes embarqués, dans l'ordre de « Changer de thème » ; le premier est le défaut.
@@ -314,6 +325,7 @@ pub enum Focus {
     #[default]
     Editor,
     Explorer,
+    Terminal,
 }
 
 #[derive(Debug, Default)]
@@ -379,6 +391,8 @@ pub struct State {
     pub backup_offer: Option<(PathBuf, String)>,
     /// Écran d'aide des raccourcis (F1) ouvert : index de sa première ligne affichée.
     pub help: Option<usize>,
+    /// Terminal intégré (F-60).
+    pub terminal: Terminal,
 }
 
 /// Lignes de l'aide visibles à la fois : écran moins le cadre et une marge en haut et en bas.
@@ -409,7 +423,7 @@ pub fn banner_height(state: &State) -> u16 {
 }
 
 /// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, les barres d'onglets,
-/// de recherche et de statut, le bandeau et le panneau « Problèmes » s'il est ouvert.
+/// de recherche et de statut, le bandeau et les panneaux « Problèmes » et terminal s'ils sont ouverts.
 pub fn editor_size(state: &State) -> (u16, u16) {
     let problems = if state.problems_open {
         PROBLEMS_HEIGHT
@@ -419,7 +433,9 @@ pub fn editor_size(state: &State) -> (u16, u16) {
     let bars = TAB_BAR_HEIGHT + banner_height(state) + 1 + search_bar_height(state);
     (
         state.width.saturating_sub(explorer_width(state)),
-        state.height.saturating_sub(bars + problems),
+        state
+            .height
+            .saturating_sub(bars + problems + terminal_height(state)),
     )
 }
 

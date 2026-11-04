@@ -312,6 +312,7 @@ async fn run(
                     | Command::RequestFormat { .. }) => lsp.request(cmd),
                     // Alt+N comme Alt+B : l'offre réglée est traitée par `cleanup`.
                     Command::DiscardBackup(_) => {}
+                    Command::TerminalKey(_) | Command::TerminalPaste(_) => {}
                 }
             }
             send_backup(backups.cleanup(&state));
