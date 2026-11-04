@@ -53,7 +53,10 @@ pub fn search_text(
         if stop() {
             return None;
         }
-        // `take` et non `metadata` : un pseudo-fichier annonce 0 octet, un autre peut grossir.
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_FILE_BYTES) {
+            continue;
+        }
+        // `take` en plus : un pseudo-fichier annonce 0 octet, un autre peut grossir.
         let mut text = String::new();
         let read = std::fs::File::open(&path)
             .and_then(|f| f.take(MAX_FILE_BYTES + 1).read_to_string(&mut text));

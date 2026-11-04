@@ -215,10 +215,12 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
                 || path.display().to_string(),
                 |n| n.to_string_lossy().into(),
             );
+            if state.pending_jump.as_ref().is_some_and(|l| l.path == path) {
+                state.pending_jump = None;
+            }
             if create {
                 tabs::open(state, path, |p| Document::from_text(Some(p), ""));
             }
-            state.pending_jump = None;
             state.status = format!("Impossible d'ouvrir {name} : {error}");
             vec![]
         }
@@ -468,7 +470,7 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
                 }
                 None => state.status = "Aucun fichier : lancez `ide <fichier>`".into(),
             },
-            Key::Char(':') => toggle_comment(doc, &mut state.status),
+            _ if is_comment_key(k) => toggle_comment(doc, &mut state.status),
             Key::Char('z' | 'Z') if !k.mods.shift => {
                 if !doc.undo() {
                     state.status = "Rien à annuler".into();
@@ -506,7 +508,7 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         match k.key {
             Key::Backspace if !k.mods.ctrl => doc.delete_word_before(),
             // Repli de Ctrl+:, qui n'existe que sous protocole Kitty.
-            Key::Char(':') => toggle_comment(doc, &mut state.status),
+            _ if is_comment_key(k) => toggle_comment(doc, &mut state.status),
             // Repli : `Alt+-` / `Alt+=` au curseur, avec Shift (`_` / `+`) pour tout le fichier.
             Key::Char('-') if !k.mods.shift => {
                 if !doc.fold_at_cursor() {
@@ -649,6 +651,11 @@ fn comment_marks(doc: &Document) -> Option<(&'static str, &'static str)> {
         "css" | "scss" => Some(("/*", "*/")),
         _ => None,
     }
+}
+
+/// `:`, ou `;` + Shift sous protocole Kitty sur un clavier où `:` demande Shift.
+pub(crate) fn is_comment_key(k: KeyInput) -> bool {
+    k.key == Key::Char(':') || (k.key == Key::Char(';') && k.mods.shift)
 }
 
 fn toggle_comment(doc: &mut Document, status: &mut String) {
@@ -909,6 +916,80 @@ mod tests {
         s.doc.select_all();
         update(&mut s, ctrl_deux_points());
         assert_eq!(s.doc.rope().to_string(), "# # a\n# b");
+    }
+
+    #[test]
+    fn commentaire_vide_retire_sans_planter_ni_manger_la_ligne() {
+        for (path, avant, apres) in [
+            ("a.css", "/* */", ""),
+            ("a.css", "/**/", ""),
+            ("a.html", "<!-- -->\nb", "\nb"),
+            ("a.css", "/*  */\nb {}\n", "\nb {}\n"),
+        ] {
+            let mut s = commente(path, avant);
+            update(&mut s, ctrl_deux_points());
+            assert_eq!(s.doc.rope().to_string(), apres, "{avant}");
+        }
+    }
+
+    #[test]
+    fn deux_commentaires_sur_une_ligne_ne_font_pas_un_seul() {
+        let mut s = commente("a.css", "/* x */ b; /* y */");
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "/* /* x */ b; /* y */ */");
+    }
+
+    #[test]
+    fn shift_point_virgule_commente_aussi() {
+        let mut s = commente("a.c", "x");
+        update(
+            &mut s,
+            Event::Key(KeyInput {
+                key: Key::Char(';'),
+                mods: Modifiers {
+                    alt: true,
+                    shift: true,
+                    ..Modifiers::default()
+                },
+            }),
+        );
+        assert_eq!(s.doc.rope().to_string(), "// x");
+    }
+
+    #[test]
+    fn alt_deux_points_ne_touche_pas_le_document_depuis_l_explorateur() {
+        let mut s = commente("a.c", "x");
+        s.focus = crate::Focus::Explorer;
+        update(
+            &mut s,
+            Event::Key(KeyInput {
+                key: Key::Char(':'),
+                mods: Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                },
+            }),
+        );
+        assert_eq!(s.doc.rope().to_string(), "x");
+    }
+
+    #[test]
+    fn ouverture_echouee_d_un_autre_fichier_garde_le_saut() {
+        let mut s = opened("");
+        s.pending_jump = Some(crate::Location {
+            path: "/x/b.rs".into(),
+            start: crate::Position::default(),
+            end: crate::Position::default(),
+        });
+        update(
+            &mut s,
+            Event::OpenFailed {
+                path: "/x/c.rs".into(),
+                error: "non".into(),
+                create: false,
+            },
+        );
+        assert!(s.pending_jump.is_some());
     }
 
     #[test]

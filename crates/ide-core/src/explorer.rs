@@ -126,7 +126,7 @@ pub(crate) fn key(state: &mut State, k: KeyInput) -> Option<Vec<Command>> {
     // Raccourcis globaux (fichier, onglets) seulement : les raccourcis d'édition (Ctrl+X/V/Z/A…)
     // modifieraient le document caché sans qu'on le voie.
     if k.mods.alt {
-        return None;
+        return crate::editor::is_comment_key(k).then(Vec::new);
     }
     if k.mods.ctrl {
         return match k.key {

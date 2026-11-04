@@ -437,20 +437,23 @@ impl Document {
                 body.len() >= open.len() + close.len()
                     && body.starts_with(open)
                     && body.ends_with(close)
+                    // `/* a */ b /* c */` : deux commentaires, pas un seul.
+                    && (close.is_empty()
+                        || !body[open.len()..body.len() - close.len()].contains(close))
             });
         let mut edits = vec![];
         if commented {
             for (start, text) in &lines {
                 let from = start + indent(text);
                 let body = text.trim_start();
-                let spaced = body[open.len()..].starts_with(' ');
-                let len = open.chars().count() + usize::from(spaced);
-                edits.push((from..from + len, String::new()));
+                let inner = &body[open.len()..body.len() - close.len()];
+                let lead = usize::from(inner.starts_with(' '));
+                edits.push((from..from + open.chars().count() + lead, String::new()));
                 if !close.is_empty() {
+                    // `/* */` : son unique espace ne compte qu'une fois, sinon les plages se chevauchent.
+                    let trail = usize::from(inner.len() > lead && inner.ends_with(' '));
                     let end = start + text.chars().count();
-                    let spaced = body[..body.len() - close.len()].ends_with(' ');
-                    let len = close.chars().count() + usize::from(spaced);
-                    edits.push((end - len..end, String::new()));
+                    edits.push((end - close.chars().count() - trail..end, String::new()));
                 }
             }
         } else {

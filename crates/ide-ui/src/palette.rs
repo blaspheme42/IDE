@@ -104,7 +104,12 @@ fn draw(state: &State, frame: &mut Frame, theme: &Theme, items: &[PaletteItem]) 
             .take(shown_rows)
             .map(|(i, it)| {
                 // Détail calé à droite après au moins une espace, tronqué par « … ».
-                let label = fit(&it.label, width);
+                // Texte : place gardée pour le dossier, seul à distinguer deux `mod.rs:12`.
+                let keep = match (text, it.detail.is_empty()) {
+                    (true, false) => it.detail.width().min(width / 3) + 1,
+                    _ => 0,
+                };
+                let label = fit(&it.label, width.saturating_sub(keep));
                 let room = width.saturating_sub(label.width() + 1);
                 let d = fit(&it.detail, room);
                 let pad = width.saturating_sub(label.width() + d.width());
@@ -366,6 +371,36 @@ mod tests {
         assert_eq!(
             b.buffer()[(X + 1, 14)].bg,
             Theme::dark().explorer_selected.bg.expect("fond")
+        );
+    }
+
+    #[test]
+    fn dossier_garde_sur_un_resultat_long() {
+        let mut s = state(PaletteKind::Text, "x", 0);
+        s.project_search.hits = vec![TextHit {
+            location: Location {
+                path: "src/a/mod.rs".into(),
+                start: Default::default(),
+                end: Default::default(),
+            },
+            excerpt: "x".repeat(200),
+        }];
+        if let Some(p) = &mut s.palette {
+            p.ranked = vec![0];
+        }
+        let mut t = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+        t.draw(|f| render_with(&s, f, &Theme::dark()))
+            .expect("rendu");
+        let ecran: String = t
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(
+            ecran.contains("mod.rs:1: x") && ecran.contains("src/a"),
+            "{ecran}"
         );
     }
 
