@@ -1,6 +1,7 @@
-//! Rendu du terminal intégré (F-60) : la grille remplie par l'app, sous une bordure haute.
+//! Rendu du terminal intégré (F-60) : la grille remplie par l'app, sous une bordure haute qui porte
+//! les onglets.
 
-use ide_core::{Focus, State, TermColor, TermSpan};
+use ide_core::{Focus, State, TERMINAL_TITLE, TermColor, TermSpan, terminal_tab_label};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -45,6 +46,20 @@ pub(crate) fn panel(state: &State, frame: &mut Frame, area: Rect, theme: &Theme)
                 .collect()
         })
         .collect();
+    // shortcut: les onglets au-delà de la largeur sont coupés, défiler le titre s'il en faut autant.
+    let mut title = vec![Span::styled(
+        TERMINAL_TITLE,
+        Style::new().add_modifier(Modifier::BOLD),
+    )];
+    title.extend((0..state.terminal.tabs.len()).map(|i| {
+        let active = i == state.terminal.active;
+        let style = if active {
+            theme.tab_active
+        } else {
+            theme.tab_inactive
+        };
+        Span::styled(terminal_tab_label(i), style)
+    }));
     let block = Block::new()
         .borders(Borders::TOP)
         .border_style(if focus {
@@ -52,10 +67,7 @@ pub(crate) fn panel(state: &State, frame: &mut Frame, area: Rect, theme: &Theme)
         } else {
             Style::new().fg(theme.border)
         })
-        .title(Span::styled(
-            " TERMINAL ",
-            Style::new().add_modifier(Modifier::BOLD),
-        ));
+        .title(Line::from(title));
     frame.render_widget(Paragraph::new(lines).block(block), area);
     if let Some((row, col)) = state.terminal.cursor
         && focus

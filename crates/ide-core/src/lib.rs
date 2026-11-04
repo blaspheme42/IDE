@@ -28,7 +28,8 @@ pub use palette::{
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
 pub use terminal::{
-    TERMINAL_HEIGHT, TermColor, TermSpan, Terminal, terminal_height, terminal_size,
+    TERMINAL_HEIGHT, TERMINAL_TITLE, TermColor, TermSpan, Terminal, terminal_height, terminal_size,
+    terminal_tab_at, terminal_tab_label,
 };
 
 /// Touche indépendante du terminal (l'app convertit depuis crossterm).
@@ -197,8 +198,9 @@ pub enum Event {
     },
     /// Active l'onglet ouvert sur ce chemin, s'il existe.
     ActivateTab(PathBuf),
-    /// Le shell du terminal intégré s'est terminé ; `error` : à afficher dans la barre de statut.
+    /// Le shell de l'onglet `id` s'est terminé ; `error` : à afficher dans la barre de statut.
     TerminalExited {
+        id: u32,
         error: Option<String>,
     },
 }
@@ -263,9 +265,10 @@ pub enum Command {
     Reload(PathBuf),
     /// Supprimer la copie de secours de ce fichier (Alt+N).
     DiscardBackup(PathBuf),
-    /// Touche pour le shell : celle réellement pressée, avant `[keys]`.
-    TerminalKey(KeyInput),
-    TerminalPaste(String),
+    /// Touche pour le shell de cet onglet : celle réellement pressée, avant `[keys]`. L'identifiant
+    /// est celui du moment de la frappe, l'app ne l'a peut-être pas encore vu changer.
+    TerminalKey(u32, KeyInput),
+    TerminalPaste(u32, String),
 }
 
 /// Thèmes embarqués, dans l'ordre de « Changer de thème » ; le premier est le défaut.

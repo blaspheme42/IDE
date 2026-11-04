@@ -21,7 +21,7 @@
 - **Search**: find and replace in the current file, with regex and capture groups.
 - **Language servers**: completion, hover, go-to-definition, diagnostics, and formatting (also on save). Servers start automatically when installed. A missing or crashed server never blocks editing.
 - **Syntax highlighting** (tree-sitter): Rust, C, Python, JavaScript, TypeScript (and TSX), HTML (and Vue), CSS, JSON, TOML, Markdown, PHP, Go.
-- **Integrated terminal**: bottom panel running one shell in the project folder. When it has focus, every key goes to the shell except the toggle, so `Ctrl+Q`, `Ctrl+P` and `F1` do not act on IDE. Closing the panel keeps the shell; `exit` closes the panel, and a new shell starts the next time you open it. Click the panel to focus it, use the mouse wheel for its history.
+- **Integrated terminal**: bottom panel with shell tabs, running in the project folder. When it has focus, every key goes to the shell except the toggle and the tab keys, so `Ctrl+Q`, `Ctrl+P` and `F1` do not act on IDE. `Alt+T` opens a tab, `Alt+PageDown` / `Alt+PageUp` cycle through them, and clicking a number in the panel's top border activates that tab. Closing the panel keeps the shells; `exit` closes its tab, even in the background, and the panel closes with the last tab, so a new shell starts the next time you open it. Click the panel to focus it, use the mouse wheel for its history.
 - **Tabs, fuzzy file picker, command palette**, four themes (`dark`, `light`, `gruvbox`, `solarized-light`), configurable key bindings.
 - **Safety**: backup copies of unsaved work, restored after a crash. Session (open tabs, cursor positions) restored on restart.
 
@@ -151,6 +151,7 @@ Clipboard: copy and paste inside IDE always work. Sharing the clipboard with Win
 | `Ctrl+W`, `Ctrl+PageDown` / `Ctrl+PageUp`, `Alt+1`…`Alt+9` | Close tab, next / previous tab, go to tab |
 | `Ctrl+B` / `Ctrl+E` | Show / hide explorer, focus explorer |
 | `Ctrl+ù` (kitty, WezTerm, foot, Ghostty, Alacritty) / `Alt+J` (everywhere) | Terminal: open and focus; if open, focus; if focused, close and return to the editor (also in the palette, remappable as `toggle_terminal`) |
+| `Alt+T`, `Alt+PageDown` / `Alt+PageUp` (terminal focused) | New terminal tab, next / previous terminal tab |
 
 In the explorer: arrows to move, `Enter` to open, `n` / `Shift+N` new file / folder, `F2` or `r` rename, `m` move, `Delete` trash, `.` show hidden files, `<` / `>` resize.
 
