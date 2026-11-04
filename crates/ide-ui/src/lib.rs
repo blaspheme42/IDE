@@ -346,13 +346,19 @@ fn tab_bar(state: &State, area: Rect, frame: &mut Frame, theme: &Theme) {
     );
 }
 
+/// Indicateurs `[.*]` `[Aa]` : actif en vidéo inverse du thème, inactif estompé.
+fn search_flag(on: bool, theme: &Theme) -> Style {
+    if on {
+        Style::new().fg(theme.background).bg(theme.foreground)
+    } else {
+        Style::new().fg(theme.muted)
+    }
+}
+
 /// Barre de recherche : `Rechercher : <query>` + indicateurs et compteur à droite,
 /// puis `Remplacer  : <replace>` en mode remplacer. Curseur du terminal à la fin du champ actif.
 fn search_bar(s: &Search, area: Rect, frame: &mut Frame, cursor: bool, theme: &Theme) {
-    // Indicateurs `[.*]` `[Aa]` : actif en vidéo inverse du thème, inactif estompé.
-    let on = Style::new().fg(theme.background).bg(theme.foreground);
-    let off = Style::new().fg(theme.muted);
-    let flag = |is_on, t| Span::styled(t, if is_on { on } else { off });
+    let flag = |is_on, t| Span::styled(t, search_flag(is_on, theme));
     let count = match (&s.error, s.current) {
         (Some(e), _) => Span::styled(e.clone(), Style::new().fg(theme.error)),
         _ if s.query.is_empty() => Span::raw(""),

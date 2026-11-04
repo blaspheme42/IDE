@@ -330,7 +330,8 @@ async fn run(
                     | Command::Rename { .. }
                     | Command::Trash(_)
                     | Command::Reload(_)
-                    | Command::ListFiles { .. }) => workspace::spawn(cmd, tx.clone()),
+                    | Command::ListFiles { .. }
+                    | Command::SearchText { .. }) => workspace::spawn(cmd, tx.clone()),
                     cmd @ (Command::RequestCompletion { .. }
                     | Command::RequestHover { .. }
                     | Command::RequestDefinition { .. }
