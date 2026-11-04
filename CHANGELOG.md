@@ -4,6 +4,10 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+### Ajouté
+- Commenter / décommenter les lignes selon le langage (F-81) : `Alt+:` partout, `Ctrl+:` sous protocole Kitty, ou la palette.
+- Recherche texte dans tout le projet (F-52) : `Ctrl+Shift+F` ou `Alt+F` (hors protocole Kitty, le terminal envoie `Ctrl+Shift+F` comme `Ctrl+F`), aussi « Recherche : rechercher dans le projet » dans la palette et `project_search` dans `[keys]`. Résultats à la frappe, en tâche de fond, sous la forme `fichier:ligne: extrait` ; `Alt+R` regex, `Alt+C` casse ; `Entrée` ouvre le fichier sur le résultat ; à la réouverture, requête et résultats sont réaffichés et la recherche relancée. Une ligne par résultat, 1000 résultats au plus (compteur `1000+` au-delà), .gitignore respecté, fichiers non UTF-8 ou de plus de 5 Mio sautés. La recherche lit le disque : les modifications non sauvegardées des onglets n'y sont pas vues.
+
 ## [1.3.0] — 2026-11-04 · Terminal intégré, onglets et vingt thèmes
 
 ### Ajouté

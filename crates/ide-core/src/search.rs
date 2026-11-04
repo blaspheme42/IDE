@@ -28,7 +28,7 @@ pub struct Search {
 }
 
 impl Search {
-    fn compile(&self) -> Result<Regex, String> {
+    pub fn compile(&self) -> Result<Regex, String> {
         let pattern = if self.regex {
             self.query.clone()
         } else {

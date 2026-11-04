@@ -532,6 +532,11 @@ pub(crate) fn definition_result(state: &mut State, locations: Vec<Location>) -> 
         state.status = "Aucune définition".into();
         return vec![];
     };
+    jump(state, loc)
+}
+
+/// Place le curseur sur `loc`, tout de suite dans le document actif, sinon à l'arrivée du fichier.
+pub(crate) fn jump(state: &mut State, loc: Location) -> Vec<Command> {
     if state.doc.path.as_ref() == Some(&loc.path) {
         let pos = state.doc.char_at_lsp(loc.start);
         state.doc.set_cursor(pos, false);

@@ -67,6 +67,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             palette::refresh(state);
             vec![]
         }
+        Event::TextResults { generation, result } => {
+            palette::text_results(state, generation, result);
+            vec![]
+        }
         Event::GitBranch(branch) => {
             state.git_branch = branch;
             vec![]
@@ -128,10 +132,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             }
             cmds
         }
-        Event::Paste(text) if state.palette.is_some() => {
-            palette::paste(state, &text);
-            vec![]
-        }
+        Event::Paste(text) if state.palette.is_some() => palette::paste(state, &text),
         Event::Paste(text) if state.focus == crate::Focus::Terminal && state.help.is_none() => {
             state.terminal.scroll = 0;
             let id = state.terminal.active_id();
@@ -214,6 +215,9 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
                 || path.display().to_string(),
                 |n| n.to_string_lossy().into(),
             );
+            if state.pending_jump.as_ref().is_some_and(|l| l.path == path) {
+                state.pending_jump = None;
+            }
             if create {
                 tabs::open(state, path, |p| Document::from_text(Some(p), ""));
             }
@@ -466,6 +470,7 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
                 }
                 None => state.status = "Aucun fichier : lancez `ide <fichier>`".into(),
             },
+            _ if is_comment_key(k) => toggle_comment(doc, &mut state.status),
             Key::Char('z' | 'Z') if !k.mods.shift => {
                 if !doc.undo() {
                     state.status = "Rien à annuler".into();
@@ -502,6 +507,8 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         // Alt+Retour arrière : la plupart des terminaux envoient Ctrl+Retour arrière comme Ctrl+H.
         match k.key {
             Key::Backspace if !k.mods.ctrl => doc.delete_word_before(),
+            // Repli de Ctrl+:, qui n'existe que sous protocole Kitty.
+            _ if is_comment_key(k) => toggle_comment(doc, &mut state.status),
             // Repli : `Alt+-` / `Alt+=` au curseur, avec Shift (`_` / `+`) pour tout le fichier.
             Key::Char('-') if !k.mods.shift => {
                 if !doc.fold_at_cursor() {
@@ -622,6 +629,40 @@ fn auto_pair(doc: &mut Document, c: char) -> bool {
     doc.edit(cur..cur, &format!("{c}{close}"));
     doc.set_cursor(cur + 1, false);
     true
+}
+
+/// Marques de commentaire du fichier : ouvrante, et fermante pour les langages sans commentaire
+/// de ligne.
+// shortcut: d'après l'extension seule, donc `//` partout dans un .php, même dans son HTML ; passer par
+// l'arbre tree-sitter si le HTML ou le CSS embarqués gênent.
+fn comment_marks(doc: &Document) -> Option<(&'static str, &'static str)> {
+    let path = doc.path.as_ref()?;
+    let name = path.file_name()?.to_str()?.to_ascii_lowercase();
+    if matches!(name.as_str(), "makefile" | "dockerfile") {
+        return Some(("#", ""));
+    }
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "rs" | "c" | "h" | "cc" | "cpp" | "hpp" | "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx"
+        | "go" | "php" | "phtml" | "java" => Some(("//", "")),
+        "py" | "toml" | "sh" | "bash" | "zsh" | "yml" | "yaml" | "rb" => Some(("#", "")),
+        "lua" | "sql" => Some(("--", "")),
+        "html" | "htm" | "vue" | "xml" | "svg" | "md" | "markdown" => Some(("<!--", "-->")),
+        "css" | "scss" => Some(("/*", "*/")),
+        _ => None,
+    }
+}
+
+/// `:`, ou `;` + Shift sous protocole Kitty sur un clavier où `:` demande Shift.
+pub(crate) fn is_comment_key(k: KeyInput) -> bool {
+    k.key == Key::Char(':') || (k.key == Key::Char(';') && k.mods.shift)
+}
+
+fn toggle_comment(doc: &mut Document, status: &mut String) {
+    match comment_marks(doc) {
+        Some((open, close)) => doc.toggle_comment(open, close),
+        None => *status = "Pas de commentaire connu pour ce fichier".into(),
+    }
 }
 
 fn is_html(doc: &Document) -> bool {
@@ -804,6 +845,188 @@ mod tests {
             },
         );
         assert_eq!(s.status, "Échec de la sauvegarde : disque plein");
+    }
+
+    fn commente(path: &str, text: &str) -> State {
+        State {
+            doc: Document::from_text(Some(path.into()), text),
+            ..State::default()
+        }
+    }
+
+    fn ctrl_deux_points() -> Event {
+        Event::Key(KeyInput {
+            key: Key::Char(':'),
+            mods: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        })
+    }
+
+    #[test]
+    fn commentaire_selon_le_langage_et_retour() {
+        for (path, avant, apres) in [
+            ("a.rs", "    let x = 1;", "    // let x = 1;"),
+            ("a.py", "x = 1", "# x = 1"),
+            ("a.html", "  <b>é</b>", "  <!-- <b>é</b> -->"),
+            ("a.css", "a { }", "/* a { } */"),
+        ] {
+            let mut s = commente(path, avant);
+            update(&mut s, ctrl_deux_points());
+            assert_eq!(s.doc.rope().to_string(), apres, "{path}");
+            update(&mut s, ctrl_deux_points());
+            assert_eq!(s.doc.rope().to_string(), avant, "{path}");
+            assert!(s.doc.undo());
+            assert_eq!(s.doc.rope().to_string(), apres, "{path}");
+        }
+    }
+
+    #[test]
+    fn alt_deux_points_commente_aussi() {
+        let mut s = commente("a.c", "int x;");
+        update(
+            &mut s,
+            Event::Key(KeyInput {
+                key: Key::Char(':'),
+                mods: Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                },
+            }),
+        );
+        assert_eq!(s.doc.rope().to_string(), "// int x;");
+    }
+
+    #[test]
+    fn commentaire_de_selection_garde_la_selection_et_les_lignes_vides() {
+        let mut s = commente("a.rs", "    a\n\n  b\nc\n");
+        s.doc.set_cursor(0, false);
+        s.doc.set_cursor(11, true);
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "  //   a\n\n  // b\nc\n");
+        assert!(s.doc.selection().is_some());
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "    a\n\n  b\nc\n");
+    }
+
+    #[test]
+    fn selection_en_partie_commentee_commente_tout() {
+        let mut s = commente("a.py", "# a\nb");
+        s.doc.select_all();
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "# # a\n# b");
+    }
+
+    #[test]
+    fn commentaire_vide_retire_sans_planter_ni_manger_la_ligne() {
+        for (path, avant, apres) in [
+            ("a.css", "/* */", ""),
+            ("a.css", "/**/", ""),
+            ("a.html", "<!-- -->\nb", "\nb"),
+            ("a.css", "/*  */\nb {}\n", "\nb {}\n"),
+        ] {
+            let mut s = commente(path, avant);
+            update(&mut s, ctrl_deux_points());
+            assert_eq!(s.doc.rope().to_string(), apres, "{avant}");
+        }
+    }
+
+    #[test]
+    fn deux_commentaires_sur_une_ligne_ne_font_pas_un_seul() {
+        let mut s = commente("a.css", "/* x */ b; /* y */");
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "/* /* x */ b; /* y */ */");
+    }
+
+    #[test]
+    fn shift_point_virgule_commente_aussi() {
+        let mut s = commente("a.c", "x");
+        update(
+            &mut s,
+            Event::Key(KeyInput {
+                key: Key::Char(';'),
+                mods: Modifiers {
+                    alt: true,
+                    shift: true,
+                    ..Modifiers::default()
+                },
+            }),
+        );
+        assert_eq!(s.doc.rope().to_string(), "// x");
+    }
+
+    #[test]
+    fn alt_deux_points_ne_touche_pas_le_document_depuis_l_explorateur() {
+        let mut s = commente("a.c", "x");
+        s.focus = crate::Focus::Explorer;
+        update(
+            &mut s,
+            Event::Key(KeyInput {
+                key: Key::Char(':'),
+                mods: Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                },
+            }),
+        );
+        assert_eq!(s.doc.rope().to_string(), "x");
+    }
+
+    #[test]
+    fn ouverture_echouee_d_un_autre_fichier_garde_le_saut() {
+        let mut s = opened("");
+        s.pending_jump = Some(crate::Location {
+            path: "/x/b.rs".into(),
+            start: crate::Position::default(),
+            end: crate::Position::default(),
+        });
+        update(
+            &mut s,
+            Event::OpenFailed {
+                path: "/x/c.rs".into(),
+                error: "non".into(),
+                create: false,
+            },
+        );
+        assert!(s.pending_jump.is_some());
+    }
+
+    #[test]
+    fn marques_qui_se_chevauchent_ne_comptent_pas_comme_commentaire() {
+        let mut s = commente("a.css", "/*/");
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "/* /*/ */");
+    }
+
+    #[test]
+    fn commentaire_sans_espace_retire_et_fichier_inconnu() {
+        let mut s = commente("a.rs", "//x");
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "x");
+        let mut s = commente("a.json", "{}");
+        update(&mut s, ctrl_deux_points());
+        assert_eq!(s.doc.rope().to_string(), "{}");
+        assert_eq!(s.status, "Pas de commentaire connu pour ce fichier");
+    }
+
+    #[test]
+    fn ouverture_echouee_oublie_le_saut() {
+        let mut s = opened("");
+        s.pending_jump = Some(crate::Location {
+            path: "/x/b.rs".into(),
+            start: crate::Position::default(),
+            end: crate::Position::default(),
+        });
+        update(
+            &mut s,
+            Event::OpenFailed {
+                path: "/x/b.rs".into(),
+                error: "non".into(),
+                create: false,
+            },
+        );
+        assert!(s.pending_jump.is_none());
     }
 
     #[test]

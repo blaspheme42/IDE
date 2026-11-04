@@ -927,6 +927,7 @@ dependencies = [
  "ide-core",
  "ignore",
  "notify-debouncer-mini",
+ "regex",
  "similar",
  "tempfile",
  "toml",

@@ -418,6 +418,62 @@ impl Document {
         first..last + 1
     }
 
+    /// Commente les lignes de la sélection (ou du curseur) ; si toutes le sont déjà, décommente.
+    /// Lignes vides laissées telles quelles ; `close` vide pour un commentaire de ligne.
+    pub fn toggle_comment(&mut self, open: &str, close: &str) {
+        let lines: Vec<(usize, String)> = self
+            .selected_lines()
+            .map(|l| {
+                let line = self.rope.line(l).to_string();
+                (self.rope.line_to_char(l), line.trim_end().to_string())
+            })
+            .filter(|(_, text)| !text.is_empty())
+            .collect();
+        let indent = |text: &str| text.chars().take_while(|c| c.is_whitespace()).count();
+        let commented = !lines.is_empty()
+            && lines.iter().all(|(_, text)| {
+                // La longueur écarte `/*/` : ses marques se chevauchent.
+                let body = text.trim_start();
+                body.len() >= open.len() + close.len()
+                    && body.starts_with(open)
+                    && body.ends_with(close)
+                    // `/* a */ b /* c */` : deux commentaires, pas un seul.
+                    && (close.is_empty()
+                        || !body[open.len()..body.len() - close.len()].contains(close))
+            });
+        let mut edits = vec![];
+        if commented {
+            for (start, text) in &lines {
+                let from = start + indent(text);
+                let body = text.trim_start();
+                let inner = &body[open.len()..body.len() - close.len()];
+                let lead = usize::from(inner.starts_with(' '));
+                edits.push((from..from + open.chars().count() + lead, String::new()));
+                if !close.is_empty() {
+                    // `/* */` : son unique espace ne compte qu'une fois, sinon les plages se chevauchent.
+                    let trail = usize::from(inner.len() > lead && inner.ends_with(' '));
+                    let end = start + text.chars().count();
+                    edits.push((end - close.chars().count() - trail..end, String::new()));
+                }
+            }
+        } else {
+            let column = lines.iter().map(|(_, t)| indent(t)).min().unwrap_or(0);
+            for (start, text) in &lines {
+                edits.push((start + column..start + column, format!("{open} ")));
+                if !close.is_empty() {
+                    let end = start + text.chars().count();
+                    edits.push((end..end, format!(" {close}")));
+                }
+            }
+        }
+        edits.sort_by_key(|e| e.0.start);
+        let cursor = map_pos(self.cursor, &edits, false);
+        let anchor = self.anchor.map(|a| map_pos(a, &edits, false));
+        if self.apply_many(edits, Kind::Other) {
+            self.place_after_edit(cursor, anchor);
+        }
+    }
+
     /// Tab : indente les lignes d'une sélection multi-ligne, sinon insère une tabulation
     /// ou des espaces jusqu'au prochain taquet.
     pub fn tab(&mut self) {
