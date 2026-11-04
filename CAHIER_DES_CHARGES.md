@@ -52,7 +52,7 @@ La v1 couvre les 21 exigences « Must » ci-dessous ; les « Should » et « Cou
 | F-46 | LSP | Signature help et code actions | C |
 | F-50 | Recherche | Palette « ouvrir un fichier » floue (Ctrl+P) | M |
 | F-51 | Recherche | Palette de commandes (Ctrl+Shift+P) | M |
-| F-52 | Recherche | Recherche texte dans tout le projet (Ctrl+Shift+F) | S |
+| F-52 | Recherche | Recherche texte dans tout le projet (Ctrl+Shift+F, repli Alt+F hors protocole Kitty) | S |
 | F-60 | Terminal | Terminal intégré dans un panneau bas (Ctrl+ù) | S |
 | F-70 | Git | Branche courante dans la barre de statut | M |
 | F-71 | Git | Marques d'ajout / modification / suppression dans la gouttière | S |
@@ -184,7 +184,7 @@ Les icônes s'affichent correctement avec une Nerd Font installée dans le termi
 | Basculer le focus explorateur ↔ éditeur | Ctrl+E |
 | Terminal intégré | Ctrl+ù |
 | Rechercher / remplacer | Ctrl+F / Ctrl+H |
-| Rechercher dans le projet | Ctrl+Shift+F |
+| Rechercher dans le projet | Ctrl+Shift+F (repli : Alt+F) |
 | Annuler / rétablir | Ctrl+Z / Ctrl+Y |
 | Autocomplétion | Ctrl+Espace |
 | Aller à la définition | F12 |

@@ -1,4 +1,4 @@
-//! Rendu des palettes (F-50 Ctrl+P, F-51 Ctrl+Shift+P) : en haut de l'écran, sous la barre
+//! Rendu des palettes (F-50 Ctrl+P, F-51 Ctrl+Shift+P, F-52 Ctrl+Shift+F) : en haut de l'écran, sous la barre
 //! d'onglets, centrée comme VSCode. Dessinée en dernier : elle recouvre tout et prend le curseur.
 
 use ide_core::{PaletteItem, PaletteKind, State, TAB_BAR_HEIGHT, palette_items};
@@ -31,9 +31,26 @@ fn draw(state: &State, frame: &mut Frame, theme: &Theme, items: &[PaletteItem]) 
         width: w,
         height: (rows + 3).min(screen.bottom() - y),
     };
+    let search = &state.project_search;
     let title = match p.kind {
-        PaletteKind::Files => " Ouvrir un fichier ",
-        PaletteKind::Commands => " Commandes ",
+        PaletteKind::Files => Line::raw(" Ouvrir un fichier "),
+        PaletteKind::Commands => Line::raw(" Commandes "),
+        PaletteKind::Text => {
+            let count = match (search.searching, search.truncated, search.hits.len()) {
+                (true, ..) => "…".to_owned(),
+                (_, _, 0) => String::new(),
+                (_, true, n) => format!("{n}+ "),
+                (.., n) => format!("{n} "),
+            };
+            let flag = |on| crate::search_flag(on, theme);
+            Line::from(vec![
+                Span::raw(" Rechercher dans le projet "),
+                Span::styled("[.*]", flag(search.regex)),
+                Span::raw(" "),
+                Span::styled("[Aa]", flag(search.case_sensitive)),
+                Span::raw(format!(" {count}")),
+            ])
+        }
     };
     let block = Block::bordered()
         .title(title)
@@ -65,8 +82,15 @@ fn draw(state: &State, frame: &mut Frame, theme: &Theme, items: &[PaletteItem]) 
         ..inner
     };
     let muted = Style::new().fg(theme.muted);
+    let text = p.kind == PaletteKind::Text;
     let lines: Vec<Line> = if p.kind == PaletteKind::Files && state.project_files.is_empty() {
         vec![Line::styled("Chargement…", muted)]
+    } else if let (true, Some(e)) = (text, &search.error) {
+        vec![Line::styled(fit(e, width), Style::new().fg(theme.error))]
+    } else if text && search.searching && items.is_empty() {
+        vec![Line::styled("Recherche…", muted)]
+    } else if text && p.query.is_empty() {
+        vec![]
     } else if items.is_empty() {
         vec![Line::styled("Aucun résultat", muted)]
     } else {
@@ -80,11 +104,12 @@ fn draw(state: &State, frame: &mut Frame, theme: &Theme, items: &[PaletteItem]) 
             .take(shown_rows)
             .map(|(i, it)| {
                 // Détail calé à droite après au moins une espace, tronqué par « … ».
-                let room = width.saturating_sub(it.label.width() + 1);
+                let label = fit(&it.label, width);
+                let room = width.saturating_sub(label.width() + 1);
                 let d = fit(&it.detail, room);
-                let pad = width.saturating_sub(it.label.width() + d.width());
+                let pad = width.saturating_sub(label.width() + d.width());
                 let line = Line::from(vec![
-                    Span::raw(it.label.clone()),
+                    Span::raw(label),
                     Span::raw(" ".repeat(pad)),
                     Span::styled(d, muted),
                 ]);
@@ -123,7 +148,7 @@ fn fit(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
     use crate::render_with;
-    use ide_core::{Document, Palette, Search};
+    use ide_core::{Document, Location, Palette, Search, TextHit};
     use ratatui::{Terminal, backend::TestBackend};
 
     fn state(kind: PaletteKind, query: &str, selected: usize) -> State {
@@ -158,6 +183,21 @@ mod tests {
         PaletteItem {
             label: label.into(),
             detail: detail.into(),
+        }
+    }
+
+    fn hit() -> TextHit {
+        let start = ide_core::Position {
+            line: 0,
+            character: 0,
+        };
+        TextHit {
+            location: Location {
+                path: "a.rs".into(),
+                start,
+                end: start,
+            },
+            excerpt: "cible".into(),
         }
     }
 
@@ -243,6 +283,90 @@ mod tests {
         let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
         t.draw(|f| render_with(&s, f, &Theme::dark())).unwrap();
         assert_eq!(t.backend().cursor_position(), Position::new(X + 1 + 6, 2));
+    }
+
+    #[test]
+    fn palette_recherche_dans_le_projet() {
+        let items = [
+            item("src/main.rs:12: fn cible() {", ""),
+            item("src/lib.rs:3: // cible", ""),
+        ];
+        let mut s = state(PaletteKind::Text, "cible", 0);
+        s.project_search.hits = vec![hit(), hit()];
+        s.project_search.case_sensitive = true;
+        let b = rendu(&s, &items);
+        insta::assert_snapshot!(b);
+        let t = Theme::dark();
+        let titre = ligne(&b, 1);
+        let at = |motif: &str| {
+            X + titre
+                .chars()
+                .skip(X as usize)
+                .collect::<String>()
+                .find(motif)
+                .expect("indicateur") as u16
+        };
+        assert!(titre.contains("[.*] [Aa] 2 "), "{titre}");
+        assert_eq!(b.buffer()[(at("[Aa]"), 1)].bg, t.foreground);
+        assert_eq!(b.buffer()[(at("[.*]"), 1)].fg, t.muted);
+    }
+
+    #[test]
+    fn recherche_etats_de_la_liste() {
+        let mut s = state(PaletteKind::Text, "cible", 0);
+        // Terminée sans rien.
+        assert!(ligne(&rendu(&s, &[]), 3).contains("│Aucun résultat "));
+        // En cours, sans résultat à garder à l'écran.
+        s.project_search.searching = true;
+        assert!(ligne(&rendu(&s, &[]), 3).contains("│Recherche… "));
+        // En cours, résultats précédents gardés.
+        s.project_search.hits = vec![hit()];
+        let b = rendu(&s, &[item("a.rs:1: cible", "")]);
+        assert!(ligne(&b, 1).contains("[Aa] …"), "{}", ligne(&b, 1));
+        assert!(ligne(&b, 3).contains("│a.rs:1: cible "));
+        // Plafond atteint.
+        s.project_search.searching = false;
+        s.project_search.truncated = true;
+        let b = rendu(&s, &[item("a.rs:1: cible", "")]);
+        assert!(ligne(&b, 1).contains("[Aa] 1+ "), "{}", ligne(&b, 1));
+        // Regex invalide, message long tronqué.
+        s.project_search.error = Some(format!("Regex invalide : {}", "x".repeat(80)));
+        let b = rendu(&s, &[]);
+        assert!(ligne(&b, 3).contains("│Regex invalide : xxx"));
+        assert!(ligne(&b, 3).contains("x…│"));
+        assert_eq!(b.buffer()[(X + 1, 3)].fg, Theme::dark().error);
+        // Requête vide : ni attente ni « Aucun résultat ».
+        let s = state(PaletteKind::Text, "", 0);
+        let b = rendu(&s, &[]);
+        assert!(!ligne(&b, 3).contains("Aucun"), "{}", ligne(&b, 3));
+    }
+
+    #[test]
+    fn resultat_tronque_a_la_largeur() {
+        let long = format!("src/a.rs:7: {}", "日本語 ".repeat(40));
+        let b = rendu(
+            &state(PaletteKind::Text, "x", 0),
+            &[item(&long, ""), item("court", "")],
+        );
+        // 46 colonnes : l'étiquette ne déborde pas du cadre et n'avale pas la ligne suivante.
+        let l = ligne(&b, 3);
+        assert!(l.contains("│src/a.rs:7: 日"), "{l}");
+        assert!(l.contains("…"), "{l}");
+        assert_eq!(b.buffer()[(X + 47, 3)].symbol(), "│", "{l}");
+        assert!(ligne(&b, 4).contains("│court "));
+    }
+
+    #[test]
+    fn resultats_au_dela_de_cinquante_defilent() {
+        let items: Vec<_> = (0..300)
+            .map(|i| item(&format!("a.rs:{i}: x"), ""))
+            .collect();
+        let b = rendu(&state(PaletteKind::Text, "x", 299), &items);
+        assert!(ligne(&b, 14).contains("│a.rs:299: x "));
+        assert_eq!(
+            b.buffer()[(X + 1, 14)].bg,
+            Theme::dark().explorer_selected.bg.expect("fond")
+        );
     }
 
     #[test]

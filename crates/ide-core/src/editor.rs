@@ -67,6 +67,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             palette::refresh(state);
             vec![]
         }
+        Event::TextResults { generation, result } => {
+            palette::text_results(state, generation, result);
+            vec![]
+        }
         Event::GitBranch(branch) => {
             state.git_branch = branch;
             vec![]
@@ -128,10 +132,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             }
             cmds
         }
-        Event::Paste(text) if state.palette.is_some() => {
-            palette::paste(state, &text);
-            vec![]
-        }
+        Event::Paste(text) if state.palette.is_some() => palette::paste(state, &text),
         Event::Paste(text) if state.focus == crate::Focus::Terminal && state.help.is_none() => {
             state.terminal.scroll = 0;
             let id = state.terminal.active_id();

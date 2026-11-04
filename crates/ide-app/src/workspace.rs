@@ -1,13 +1,17 @@
 //! Commandes de l'explorateur exécutées hors de la boucle : listage, ouverture, opérations disque.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use ide_core::{Command, Event, FsChange, FsEntry, Indent};
+use ide_core::{Command, Event, FsChange, FsEntry, Indent, Search};
 use tokio::sync::mpsc;
 
 use crate::files;
 
-/// Exécute `cmd` (ListDir, OpenFile, CreateFile, CreateDir, Rename, Trash) en tâche de fond ;
+/// Plus récente génération de recherche reçue : les plus anciennes s'arrêtent entre deux fichiers.
+static LATEST: AtomicU64 = AtomicU64::new(0);
+
+/// Exécute `cmd` (ListDir, OpenFile, CreateFile, CreateDir, Rename, Trash, SearchText) en tâche de fond ;
 /// le résultat revient comme un événement sur `tx`.
 pub fn spawn(cmd: Command, tx: mpsc::Sender<Event>) {
     let copy = cmd.clone();
@@ -55,6 +59,31 @@ fn execute(cmd: Command) -> Vec<Event> {
                 show_hidden,
             ))]
         }
+        Command::SearchText {
+            root,
+            show_hidden,
+            query,
+            regex,
+            case_sensitive,
+            generation,
+        } => {
+            LATEST.fetch_max(generation, Ordering::Relaxed);
+            let stop = || LATEST.load(Ordering::Relaxed) != generation;
+            let search = Search {
+                query,
+                regex,
+                case_sensitive,
+                ..Search::default()
+            };
+            let result = search
+                .compile()
+                .map(|re| ide_workspace::search_text(&root, show_hidden, &re, stop))
+                .transpose();
+            result
+                .map(|result| Event::TextResults { generation, result })
+                .into_iter()
+                .collect()
+        }
         Command::Reload(path) => reload(path).into_iter().collect(),
         Command::Quit
         | Command::Save { .. }
@@ -99,6 +128,10 @@ fn failure(cmd: Command, error: String) -> Event {
             create: false,
         },
         Command::ListFiles { .. } => Event::FileList(vec![]),
+        Command::SearchText { generation, .. } => Event::TextResults {
+            generation,
+            result: Err(error),
+        },
         // Rien à relire : `FileChanged { text: None }` marquerait à tort le fichier comme disparu.
         Command::Reload(_) => Event::Tick,
         _ => Event::FsDone(Err(error)),
@@ -292,6 +325,45 @@ mod tests {
         Ok(())
     }
 
+    /// Un seul test : `LATEST` est commun au processus, des recherches en parallèle s'interrompraient.
+    #[tokio::test]
+    async fn recherche_dans_le_projet() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let root = dir.path().to_path_buf();
+        let p = root.join("a.txt");
+        std::fs::write(&p, "rien\n  Cible\n")?;
+        let cmd = |query: &str, regex, generation| Command::SearchText {
+            root: root.clone(),
+            show_hidden: false,
+            query: query.into(),
+            regex,
+            case_sensitive: false,
+            generation,
+        };
+        let evs = run(cmd("cible", false, 5), 1).await;
+        let Event::TextResults {
+            generation: 5,
+            result: Ok((hits, false)),
+        } = &evs[0]
+        else {
+            panic!("{evs:?}");
+        };
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].location.path, p);
+        assert_eq!(hits[0].location.start.line, 1);
+        assert_eq!(hits[0].location.start.character, 2);
+        assert_eq!(hits[0].excerpt, "Cible");
+        // Regex invalide : un message, pas de plantage.
+        let evs = run(cmd("(", true, 6), 1).await;
+        assert!(matches!(
+            &evs[0],
+            Event::TextResults { generation: 6, result: Err(e) } if e.starts_with("Regex invalide")
+        ));
+        // Dépassée par une plus récente : rien à envoyer.
+        run(cmd("cible", false, 4), 0).await;
+        Ok(())
+    }
+
     #[tokio::test]
     async fn operations_disque() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
@@ -338,6 +410,23 @@ mod tests {
         assert!(matches!(
             failure(Command::Trash("x".into()), e()),
             Event::FsDone(Err(_))
+        ));
+        assert!(matches!(
+            failure(
+                Command::SearchText {
+                    root: "x".into(),
+                    show_hidden: false,
+                    query: "q".into(),
+                    regex: false,
+                    case_sensitive: false,
+                    generation: 3,
+                },
+                e()
+            ),
+            Event::TextResults {
+                generation: 3,
+                result: Err(_)
+            }
         ));
         assert!(matches!(
             failure(

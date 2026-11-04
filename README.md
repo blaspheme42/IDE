@@ -18,7 +18,7 @@
 - **Editor**: unlimited undo/redo, mouse selection, system clipboard (internal fallback over SSH). Keeps LF/CRLF line endings. Indentation from `.editorconfig`.
 - **Editing helpers**: auto-closing `()` `[]` `{}` `""` `''`, bracket matching, HTML tag auto-closing, Emmet, and indentation-based code folding.
 - **Git gutter**: like VS Code, a colored bar at the start of the gutter marks lines added (green), modified (blue), or deleted (red `▁` / `▔`) since the last commit, updated as you type. Nothing for untracked files or outside a git repository.
-- **Search**: find and replace in the current file, with regex and capture groups.
+- **Search**: find and replace in the current file, with regex and capture groups; text search across the project.
 - **Language servers**: completion, hover, go-to-definition, diagnostics, and formatting (also on save). Servers start automatically when installed. A missing or crashed server never blocks editing.
 - **Syntax highlighting** (tree-sitter): Rust, C, Python, JavaScript, TypeScript (and TSX), HTML (and Vue), CSS, JSON, TOML, Markdown, PHP, Go.
 - **Integrated terminal**: bottom panel with shell tabs, running in the project folder. When it has focus, every key goes to the shell except the toggle and the tab keys, so `Ctrl+Q`, `Ctrl+P` and `F1` do not act on IDE. `Alt+T` opens a tab, `Alt+PageDown` / `Alt+PageUp` cycle through them, and clicking a number in the panel's top border activates that tab. Closing the panel keeps the shells; `exit` closes its tab, even in the background, and the panel closes with the last tab, so a new shell starts the next time you open it. Click the panel to focus it, use the mouse wheel for its history.
@@ -141,6 +141,7 @@ Clipboard: copy and paste inside IDE always work. Sharing the clipboard with Win
 | `Alt+Backspace` | Delete previous word |
 | `Tab` / `Shift+Tab` | Indent / unindent; `Tab` also expands Emmet `!` and `!!!` |
 | `Ctrl+F` / `Ctrl+H` | Find / replace (`F3` next, `Alt+Enter` replace all, `Alt+R` regex, `Alt+C` match case) |
+| `Ctrl+Shift+F` (kitty, WezTerm, foot, Ghostty, Alacritty) / `Alt+F` (everywhere) | Search the project: results as you type, `Alt+R` regex, `Alt+C` match case, `Enter` opens the result (also in the palette, remappable as `project_search`). Reads files from disk, so unsaved changes are not searched; skips non-UTF-8 files and files over 5 MiB; stops at 1000 results |
 | `Alt+-` / `Alt+=` | Fold / unfold the block at the cursor (or click `-` / `+` in the gutter) |
 | `Alt+_` / `Alt++` | Fold / unfold everything |
 | `Alt+L` / `Alt+T` | Show / hide line numbers, switch to the next theme |
@@ -205,7 +206,7 @@ The full specification (in French) is in [CAHIER_DES_CHARGES.md](CAHIER_DES_CHAR
 
 ## Roadmap
 
-Multi-cursor editing, split view, rename symbol, find references, project-wide search, git status colors in the explorer.
+Multi-cursor editing, split view, rename symbol, find references, git status colors in the explorer.
 
 ## License
 

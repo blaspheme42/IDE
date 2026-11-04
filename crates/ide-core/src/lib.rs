@@ -22,8 +22,8 @@ pub use lsp::{
     visible_completions,
 };
 pub use palette::{
-    CommandInfo, Palette, PaletteItem, PaletteKind, SHORTCUTS, command_by_name, commands, help_len,
-    palette_items,
+    CommandInfo, Palette, PaletteItem, PaletteKind, ProjectSearch, SHORTCUTS, TextHit,
+    command_by_name, commands, help_len, palette_items,
 };
 pub use search::Search;
 pub use tabs::{TAB_BAR_HEIGHT, Tab, TabInfo, tab_label, tab_list, tab_scroll, tab_spans};
@@ -171,6 +171,11 @@ pub enum Event {
     LspStatus(String),
     /// Fichiers du projet (chemins absolus, .gitignore respecté), réponse à `Command::ListFiles`.
     FileList(Vec<PathBuf>),
+    /// Réponse à `Command::SearchText` : résultats et plafond atteint, ou erreur (regex invalide).
+    TextResults {
+        generation: u64,
+        result: Result<(Vec<TextHit>, bool), String>,
+    },
     /// Branche git courante (`None` : pas de dépôt, ou HEAD détachée → l'app envoie le commit court).
     GitBranch(Option<String>),
     /// Texte de `path` dans HEAD, pour les marques git de la gouttière : `None` = pas de marques
@@ -238,6 +243,15 @@ pub enum Command {
     ListFiles {
         root: PathBuf,
         show_hidden: bool,
+    },
+    /// Chercher dans les fichiers du projet → `Event::TextResults`, sauf si une recherche plus récente l'interrompt.
+    SearchText {
+        root: PathBuf,
+        show_hidden: bool,
+        query: String,
+        regex: bool,
+        case_sensitive: bool,
+        generation: u64,
     },
     /// Requêtes LSP sur le document `path` à la `version` courante (l'app aura déjà synchronisé ce texte).
     RequestCompletion {
@@ -384,6 +398,8 @@ pub struct State {
     pub palette: Option<Palette>,
     /// Fichiers du projet pour Ctrl+P (vide tant que la liste n'est pas arrivée).
     pub project_files: Vec<PathBuf>,
+    /// Recherche dans le projet : survit à la palette, pour la retrouver à la réouverture.
+    pub project_search: ProjectSearch,
     /// Branche git courante, pour la barre de statut (F-70).
     pub git_branch: Option<String>,
     /// Diagnostics LSP par fichier (F-42).
