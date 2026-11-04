@@ -106,6 +106,7 @@ Le détail est dans le [cahier des charges](CAHIER_DES_CHARGES.md).
 - Flèches, `Début`/`Fin`, `Page préc.`/`Page suiv.` : se déplacer ; `Ctrl+←`/`Ctrl+→` par mot, `Ctrl+Début`/`Ctrl+Fin` début/fin du fichier ; avec `Shift`, sélectionner. `Ctrl+A` : tout sélectionner. `Alt+Retour arrière` (ou `Ctrl+Retour arrière` si le terminal le distingue) : effacer le mot précédent.
 - Souris : clic pour placer le curseur, glisser ou `Shift+clic` pour sélectionner, molette pour défiler. La sélection native du terminal reste possible avec `Shift`+glisser (selon le terminal).
 - `Ctrl+Z` / `Ctrl+Y` (ou `Ctrl+Shift+Z`) : annuler / rétablir, sans limite.
+- `Alt+:` (ou `Ctrl+:` sous protocole Kitty) : commenter / décommenter les lignes, selon le langage du fichier.
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` : copier / couper / coller (sans sélection : la ligne entière). Presse-papiers système, ou interne si aucun n'est disponible (SSH).
 - Emmet (HTML, CSS, PHP, si emmet-language-server est installé) : tapez une abréviation (`ul>li*3`, `div.carte`, `m10` en CSS), elle apparaît dans la liste de complétion, `Entrée` la développe. Sans lui, `!` puis `Tab` insère quand même une page HTML5, `!!!` puis `Tab` le doctype.
 - `Tab` / `Shift+Tab` : indenter / désindenter (la sélection entière si elle couvre plusieurs lignes) ; `Entrée` garde l'indentation. Tabulations ou espaces et largeur selon `.editorconfig` (4 espaces par défaut).

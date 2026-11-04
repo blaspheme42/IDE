@@ -155,6 +155,11 @@ static COMMANDS: &[CommandInfo] = &[
     cmd("trigger_completion", "Code : autocomplétion", ctrl(' ')),
     cmd("hover", "Code : afficher l'infobulle", ctrl('k')),
     cmd(
+        "toggle_comment",
+        "Code : commenter / décommenter",
+        ctrl(':'),
+    ),
+    cmd(
         "goto_definition",
         "Code : aller à la définition",
         with(Key::F(12), false, false),
@@ -224,6 +229,7 @@ pub static SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
         "Édition",
         &[
             ("Ctrl+Z / Ctrl+Y", "Annuler / rétablir"),
+            ("Ctrl+: / Alt+:", "Commenter / décommenter les lignes"),
             (
                 "Ctrl+C / Ctrl+X / Ctrl+V",
                 "Copier / couper / coller (sans sélection : la ligne)",

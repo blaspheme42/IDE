@@ -135,6 +135,7 @@ Clipboard: copy and paste inside IDE always work. Sharing the clipboard with Win
 | `Ctrl+S` / `Ctrl+Q` | Save / quit (press `Ctrl+Q` twice to discard unsaved changes) |
 | `Ctrl+P` / `Ctrl+Shift+P` | Open a project file / command palette (or `Ctrl+P` then `>`) |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Alt+:` (`Ctrl+:` with the Kitty protocol) | Comment / uncomment the lines, based on the language |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste (no selection: the whole line) |
 | `Ctrl+A` | Select all |
 | `Ctrl+←` / `Ctrl+→`, `Ctrl+Home` / `Ctrl+End` | Move by word, to start / end of file (add `Shift` to select) |
