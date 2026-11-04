@@ -430,6 +430,256 @@ impl Theme {
         })
     }
 
+    /// Thème clair rose, palette propre à l'IDE.
+    pub fn rose() -> Self {
+        Self::from_palette(Palette {
+            name: "rose",
+            bg: 0xfff0f6,
+            panel: 0xffe3ee,
+            selection: 0xffc9de,
+            fg: 0x4a1730,
+            comment: 0x9c5a78,
+            border: 0xf2b6cf,
+            accent: 0xc2185b,
+            on_accent: 0xfff0f6,
+            red: 0xc8102e,
+            yellow: 0x8a5a00,
+            green: 0x2e7d32,
+            blue: 0x3f51b5,
+            keyword: 0xc2185b,
+            function: 0x8e24aa,
+            kind: 0xad1457,
+            string: 0x2e7d32,
+            number: 0xd84315,
+            constant: 0xb3367a,
+        })
+    }
+
+    /// Thème sombre marron, vert et orange, palette propre à l'IDE.
+    pub fn automne() -> Self {
+        Self::from_palette(Palette {
+            name: "automne",
+            bg: 0x2a1d14,
+            panel: 0x35261a,
+            selection: 0x4e3823,
+            fg: 0xf0e2cf,
+            comment: 0xa58e72,
+            border: 0x5a4330,
+            accent: 0xd9731a,
+            on_accent: 0x1f1409,
+            red: 0xe0694a,
+            yellow: 0xe3a94b,
+            green: 0x8fb35a,
+            blue: 0x7fb08f,
+            keyword: 0xe08a3c,
+            function: 0x9dbb5f,
+            kind: 0xc9a36b,
+            string: 0xa9c46c,
+            number: 0xe3a94b,
+            constant: 0xf0a35e,
+        })
+    }
+
+    /// Thème sombre d'après la palette « One Dark » d'Atom.
+    pub fn one_dark() -> Self {
+        Self::from_palette(Palette {
+            name: "one-dark",
+            bg: 0x282c34,
+            panel: 0x2f343e,
+            selection: 0x3e4451,
+            fg: 0xd7dae0,
+            comment: 0x7f8796,
+            border: 0x3e4451,
+            accent: 0x61afef,
+            on_accent: 0x282c34,
+            red: 0xe06c75,
+            yellow: 0xe5c07b,
+            green: 0x98c379,
+            blue: 0x61afef,
+            keyword: 0xc678dd,
+            function: 0x61afef,
+            kind: 0xe5c07b,
+            string: 0x98c379,
+            number: 0xd19a66,
+            constant: 0xd19a66,
+        })
+    }
+
+    /// Thème sombre d'après la palette « Catppuccin Mocha ».
+    pub fn catppuccin_mocha() -> Self {
+        Self::from_palette(Palette {
+            name: "catppuccin-mocha",
+            bg: 0x1e1e2e,
+            panel: 0x313244,
+            selection: 0x45475a,
+            fg: 0xcdd6f4,
+            comment: 0x9399b2,
+            border: 0x45475a,
+            accent: 0x89b4fa,
+            on_accent: 0x1e1e2e,
+            red: 0xf38ba8,
+            yellow: 0xf9e2af,
+            green: 0xa6e3a1,
+            blue: 0x89b4fa,
+            keyword: 0xcba6f7,
+            function: 0x89b4fa,
+            kind: 0xf9e2af,
+            string: 0xa6e3a1,
+            number: 0xfab387,
+            constant: 0xfab387,
+        })
+    }
+
+    /// Thème sombre d'après la palette « Rosé Pine ».
+    pub fn rose_pine() -> Self {
+        Self::from_palette(Palette {
+            name: "rose-pine",
+            bg: 0x191724,
+            panel: 0x26233a,
+            selection: 0x403d52,
+            fg: 0xe0def4,
+            comment: 0x908caa,
+            border: 0x403d52,
+            accent: 0xebbcba,
+            on_accent: 0x191724,
+            red: 0xeb6f92,
+            yellow: 0xf6c177,
+            green: 0x9ccfd8,
+            blue: 0xc4a7e7,
+            keyword: 0xc4a7e7,
+            function: 0xebbcba,
+            kind: 0x9ccfd8,
+            string: 0xf6c177,
+            number: 0xeb6f92,
+            constant: 0xf6c177,
+        })
+    }
+
+    /// Thème sombre d'après la palette « Everforest ».
+    pub fn everforest() -> Self {
+        Self::from_palette(Palette {
+            name: "everforest",
+            bg: 0x2d353b,
+            panel: 0x343f44,
+            selection: 0x475258,
+            fg: 0xd3c6aa,
+            comment: 0x9da9a0,
+            border: 0x475258,
+            accent: 0xa7c080,
+            on_accent: 0x2d353b,
+            red: 0xe67e80,
+            yellow: 0xdbbc7f,
+            green: 0xa7c080,
+            blue: 0x7fbbb3,
+            keyword: 0xe67e80,
+            function: 0xa7c080,
+            kind: 0xdbbc7f,
+            string: 0x83c092,
+            number: 0xd699b6,
+            constant: 0xe69875,
+        })
+    }
+
+    /// Thème sombre d'après la palette « Kanagawa ».
+    pub fn kanagawa() -> Self {
+        Self::from_palette(Palette {
+            name: "kanagawa",
+            bg: 0x1f1f28,
+            panel: 0x2a2a37,
+            selection: 0x2d4f67,
+            fg: 0xdcd7ba,
+            comment: 0x8a8980,
+            border: 0x54546d,
+            accent: 0x7e9cd8,
+            on_accent: 0x1f1f28,
+            red: 0xe46876,
+            yellow: 0xe6c384,
+            green: 0x98bb6c,
+            blue: 0x7e9cd8,
+            keyword: 0x957fb8,
+            function: 0x7e9cd8,
+            kind: 0x7aa89f,
+            string: 0x98bb6c,
+            number: 0xd27e99,
+            constant: 0xffa066,
+        })
+    }
+
+    /// Thème sombre d'après la palette « Ayu Mirage ».
+    pub fn ayu_mirage() -> Self {
+        Self::from_palette(Palette {
+            name: "ayu-mirage",
+            bg: 0x1f2430,
+            panel: 0x282e3b,
+            selection: 0x33415e,
+            fg: 0xcbccc6,
+            comment: 0x7c8a9c,
+            border: 0x3a4254,
+            accent: 0xffcc66,
+            on_accent: 0x1f2430,
+            red: 0xf28779,
+            yellow: 0xffcc66,
+            green: 0xbae67e,
+            blue: 0x5ccfe6,
+            keyword: 0xffa759,
+            function: 0xffd580,
+            kind: 0x73d0ff,
+            string: 0xbae67e,
+            number: 0xd4bfff,
+            constant: 0xffa759,
+        })
+    }
+
+    /// Thème clair d'après la palette « Gruvbox » claire, accents assombris pour le contraste.
+    pub fn gruvbox_light() -> Self {
+        Self::from_palette(Palette {
+            name: "gruvbox-light",
+            bg: 0xfbf1c7,
+            panel: 0xf2e5bc,
+            selection: 0xd5c4a1,
+            fg: 0x3c3836,
+            comment: 0x7c6f64,
+            border: 0xbdae93,
+            accent: 0x076678,
+            on_accent: 0xfbf1c7,
+            red: 0x9d0006,
+            yellow: 0x855c0a,
+            green: 0x79740e,
+            blue: 0x076678,
+            keyword: 0x9d0006,
+            function: 0x79740e,
+            kind: 0x7a5a08,
+            string: 0x79740e,
+            number: 0x8f3f71,
+            constant: 0xaf3a03,
+        })
+    }
+
+    /// Thème clair d'après les couleurs de GitHub.
+    pub fn github_light() -> Self {
+        Self::from_palette(Palette {
+            name: "github-light",
+            bg: 0xffffff,
+            panel: 0xf6f8fa,
+            selection: 0xcfe3ff,
+            fg: 0x24292f,
+            comment: 0x6e7781,
+            border: 0xd0d7de,
+            accent: 0x0969da,
+            on_accent: 0xffffff,
+            red: 0xcf222e,
+            yellow: 0x7d5a00,
+            green: 0x1a7f37,
+            blue: 0x0969da,
+            keyword: 0xcf222e,
+            function: 0x8250df,
+            kind: 0x953800,
+            string: 0x0a3069,
+            number: 0x0550ae,
+            constant: 0x0550ae,
+        })
+    }
+
     /// Thème complet à partir d'une palette ; les thèmes écrits à la main ci-dessus règlent chaque
     /// couleur, ceux-ci partagent une correspondance.
     fn from_palette(p: Palette) -> Self {
@@ -495,6 +745,16 @@ impl Theme {
             "monokai" => Some(Self::monokai()),
             "tokyo-night" => Some(Self::tokyo_night()),
             "catppuccin-latte" => Some(Self::catppuccin_latte()),
+            "rose" => Some(Self::rose()),
+            "automne" => Some(Self::automne()),
+            "one-dark" => Some(Self::one_dark()),
+            "catppuccin-mocha" => Some(Self::catppuccin_mocha()),
+            "rose-pine" => Some(Self::rose_pine()),
+            "everforest" => Some(Self::everforest()),
+            "kanagawa" => Some(Self::kanagawa()),
+            "ayu-mirage" => Some(Self::ayu_mirage()),
+            "gruvbox-light" => Some(Self::gruvbox_light()),
+            "github-light" => Some(Self::github_light()),
             _ => None,
         }
     }
