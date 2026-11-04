@@ -125,7 +125,7 @@ fn toggle(state: &mut State) {
     }
 }
 
-/// Alt+N, Alt+Page suiv. et Alt+Page préc. ; `false` = pas une touche d'onglet. `N` : verrouillage
+/// Alt+T, Alt+Page suiv. et Alt+Page préc. ; `false` = pas une touche d'onglet. `T` : verrouillage
 /// majuscule, que le terminal ne distingue pas de Shift. Alt+Shift+Page reste au shell.
 fn tab_key(t: &mut Terminal, k: KeyInput) -> bool {
     if !k.mods.alt || k.mods.ctrl {
@@ -133,7 +133,7 @@ fn tab_key(t: &mut Terminal, k: KeyInput) -> bool {
     }
     let n = t.tabs.len().max(1);
     match k.key {
-        Key::Char('n' | 'N') => t.new_tab(),
+        Key::Char('t' | 'T') => t.new_tab(),
         Key::PageDown if !k.mods.shift => t.select((t.active + 1) % n),
         Key::PageUp if !k.mods.shift => t.select((t.active + n - 1) % n),
         _ => return false,
@@ -160,10 +160,8 @@ pub(crate) fn key(
     if state.help.is_some() || state.palette.is_some() {
         return None;
     }
-    if state.focus == Focus::Terminal
-        && !replaying
-        && (tab_key(&mut state.terminal, pressed) || tab_key(&mut state.terminal, k))
-    {
+    // `!replaying` : « Thème suivant » de la palette rejoue Alt+T, qui n'est pas un nouvel onglet.
+    if state.focus == Focus::Terminal && !replaying && tab_key(&mut state.terminal, pressed) {
         return Some(vec![]);
     }
     // `pressed` aussi : la bascule annoncée dans la barre sort du terminal même si `[keys]` la prend.
@@ -292,7 +290,7 @@ mod tests {
     }
 
     fn nouvel_onglet() -> Event {
-        Event::Key(touche(Key::Char('n'), false, true))
+        Event::Key(touche(Key::Char('t'), false, true))
     }
 
     fn sorti(id: u32) -> Event {
@@ -614,6 +612,16 @@ mod tests {
     }
 
     #[test]
+    fn theme_rejoue_par_la_palette_ne_cree_pas_d_onglet() {
+        let mut s = etat();
+        update(&mut s, bascule());
+        let onglets = s.terminal.tabs.len();
+        s.replaying = true;
+        update(&mut s, Event::Key(touche(Key::Char('t'), false, true)));
+        assert_eq!(s.terminal.tabs.len(), onglets);
+    }
+
+    #[test]
     fn panneau_invisible_rend_les_touches_a_l_editeur() {
         let mut s = etat();
         update(&mut s, bascule());
@@ -669,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn alt_n_cree_et_bascule_sans_partir_au_shell() {
+    fn alt_t_cree_et_bascule_sans_partir_au_shell() {
         let mut s = onglets(2);
         s.terminal.scroll = 7;
         assert!(update(&mut s, nouvel_onglet()).is_empty());
@@ -684,7 +692,7 @@ mod tests {
             vec![Command::TerminalKey(2, a)]
         );
         // Verrouillage majuscule : le terminal annonce Alt+Shift+N.
-        let mut k = touche(Key::Char('N'), false, true);
+        let mut k = touche(Key::Char('T'), false, true);
         k.mods.shift = true;
         assert!(update(&mut s, Event::Key(k)).is_empty());
         assert_eq!(s.terminal.tabs.len(), 4);
@@ -727,7 +735,7 @@ mod tests {
                 vec![Command::TerminalKey(1, k)]
             );
         }
-        let k = touche(Key::Char('n'), true, true);
+        let k = touche(Key::Char('t'), true, true);
         assert_eq!(
             update(&mut s, Event::Key(k)),
             vec![Command::TerminalKey(1, k)]
@@ -740,7 +748,6 @@ mod tests {
         let mut s = onglets(2);
         s.focus = Focus::Editor;
         for k in [
-            touche(Key::Char('n'), false, true),
             touche(Key::PageUp, false, true),
             touche(Key::PageDown, false, true),
         ] {
@@ -748,6 +755,9 @@ mod tests {
             assert_eq!(s.status, k.to_string());
             assert_eq!((s.terminal.tabs.len(), s.terminal.active), (2, 1));
         }
+        // Alt+T reste « Thème suivant ».
+        update(&mut s, Event::Key(touche(Key::Char('t'), false, true)));
+        assert_eq!((s.terminal.tabs.len(), s.terminal.active), (2, 1));
         // Copie de secours proposée : Alt+N reste son « ignorer ».
         s.backup_offer = Some(("/p/a.rs".into(), String::new()));
         let cmds = update(&mut s, Event::Key(touche(Key::Char('n'), false, true)));
@@ -773,10 +783,10 @@ mod tests {
     fn keys_ne_retire_pas_les_touches_d_onglet() {
         for commande in ["save", "toggle_terminal"] {
             let mut s = onglets(2);
-            let alt_n = touche(Key::Char('n'), false, true);
+            let alt_t = touche(Key::Char('t'), false, true);
             let alt_pgup = touche(Key::PageUp, false, true);
-            s.settings.keys = vec![(alt_n, commande.into()), (alt_pgup, commande.into())];
-            assert!(update(&mut s, Event::Key(alt_n)).is_empty());
+            s.settings.keys = vec![(alt_t, commande.into()), (alt_pgup, commande.into())];
+            assert!(update(&mut s, Event::Key(alt_t)).is_empty());
             assert_eq!((s.terminal.tabs.len(), s.terminal.active), (3, 2));
             assert!(update(&mut s, Event::Key(alt_pgup)).is_empty());
             assert_eq!(s.terminal.active, 1);

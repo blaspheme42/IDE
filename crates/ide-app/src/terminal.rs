@@ -750,7 +750,7 @@ mod tests {
         fn shutdown_ne_laisse_pas_de_shell() -> anyhow::Result<()> {
             let (mut term, mut s) = (sh(), ouvert());
             term.sync(&mut s);
-            presse(&mut term, &mut s, alt('n'));
+            presse(&mut term, &mut s, alt('t'));
             term.sync(&mut s);
             let pids: Vec<_> = term
                 .sessions
@@ -782,7 +782,7 @@ mod tests {
         fn deux_onglets() -> (Term, State, u32, u32) {
             let (mut term, mut s) = (sh(), ouvert());
             term.sync(&mut s);
-            presse(&mut term, &mut s, alt('n'));
+            presse(&mut term, &mut s, alt('t'));
             term.sync(&mut s);
             let (a, b) = (s.terminal.tabs[0], s.terminal.tabs[1]);
             (term, s, a, b)
@@ -872,7 +872,7 @@ mod tests {
             let (mut term, mut s) = (sh(), ouvert());
             term.sync(&mut s);
             term.command = CommandBuilder::new("/inexistant/shell");
-            presse(&mut term, &mut s, alt('n'));
+            presse(&mut term, &mut s, alt('t'));
             term.sync(&mut s);
             assert!(s.terminal.open);
             assert_eq!(s.terminal.tabs.len(), 1);
