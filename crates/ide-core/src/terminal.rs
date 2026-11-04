@@ -88,6 +88,10 @@ pub(crate) fn key(
     if state.help.is_some() || state.palette.is_some() {
         return None;
     }
+    // Panneau invisible (écran trop petit) : les touches partiraient à l'aveugle, Ctrl+Q compris.
+    if matches!(terminal_size(state), (0, _) | (_, 0)) && state.focus == Focus::Terminal {
+        state.focus = Focus::Editor;
+    }
     if is_toggle(k) {
         toggle(state);
         return Some(vec![]);
@@ -424,6 +428,25 @@ mod tests {
         s.focus = Focus::Editor;
         assert!(update(&mut s, Event::Paste("x".into())).is_empty());
         assert_ne!(s.doc.version(), v);
+    }
+
+    #[test]
+    fn collage_ramene_la_vue_en_bas() {
+        let mut s = etat();
+        update(&mut s, bascule());
+        s.terminal.scroll = 7;
+        update(&mut s, Event::Paste("ls".into()));
+        assert_eq!(s.terminal.scroll, 0);
+    }
+
+    #[test]
+    fn panneau_invisible_rend_les_touches_a_l_editeur() {
+        let mut s = etat();
+        update(&mut s, bascule());
+        s.height = 2;
+        let cmds = update(&mut s, Event::Key(touche(Key::Char('q'), true, false)));
+        assert!(!matches!(cmds.as_slice(), [Command::TerminalKey(_)]));
+        assert_eq!(s.focus, Focus::Editor);
     }
 
     #[test]

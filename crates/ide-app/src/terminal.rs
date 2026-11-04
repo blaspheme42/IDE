@@ -32,6 +32,9 @@ struct Session {
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
     size: (u16, u16),
+    /// Offset d'historique donné à vt100 au dernier `sync` : vt100 le décale ensuite à chaque ligne
+    /// reçue pour figer la vue, et l'écart est à garder.
+    view: usize,
 }
 
 /// vt100 ne répond pas aux requêtes du programme. L'envoi ne bloque pas et l'écran est passé en
@@ -65,8 +68,12 @@ impl Session {
     }
 
     /// `try_wait` en plus : un job de fond qui garde le PTY ouvert retarde EOF après la fin du shell.
+    /// `exited` arrête alors le lecteur, dont la copie du maître empêcherait le raccroché.
     fn finished(&mut self) -> bool {
-        self.exited.load(Ordering::Acquire) || matches!(self.child.try_wait(), Ok(Some(_)))
+        if matches!(self.child.try_wait(), Ok(Some(_))) {
+            self.exited.store(true, Ordering::Release);
+        }
+        self.exited.load(Ordering::Acquire)
     }
 }
 
@@ -124,12 +131,18 @@ impl Term {
                 tracing::warn!("redimensionnement du PTY : {e:#}");
             }
         }
-        let mut parser = session.parser();
+        let mut parser = session
+            .parser
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let screen = parser.screen_mut();
-        // shortcut: vt100 décale son offset à chaque ligne reçue pour figer la vue, écrasé ici par la
-        // valeur de l'état : une vue remontée glisse avec la sortie ; garder l'écart si ça gêne.
-        screen.set_scrollback(state.terminal.scroll);
-        state.terminal.scroll = screen.scrollback();
+        let wanted = match state.terminal.scroll {
+            0 => 0,
+            scroll => (screen.scrollback() + scroll).saturating_sub(session.view),
+        };
+        screen.set_scrollback(wanted);
+        session.view = screen.scrollback();
+        state.terminal.scroll = session.view;
         state.terminal.lines = grid(screen);
         state.terminal.cursor =
             (!screen.hide_cursor() && state.terminal.scroll == 0).then(|| cursor(screen));
@@ -188,7 +201,11 @@ impl Term {
         std::thread::spawn(move || {
             let mut buf = [0; 8192];
             // Linux répond EIO, pas 0, quand le dernier esclave se ferme.
-            while let Ok(n @ 1..) = reader.read(&mut buf) {
+            // shortcut: un job de fond muet bloque ce `read`, donc le raccroché, jusqu'à sa fin ; poll
+            // sur le descripteur s'il faut raccrocher tout de suite.
+            while !done.load(Ordering::Acquire)
+                && let Ok(n @ 1..) = reader.read(&mut buf)
+            {
                 shared
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
@@ -205,6 +222,7 @@ impl Term {
             master: pair.master,
             child,
             size: (cols.get(), rows.get()),
+            view: 0,
         })
     }
 }
@@ -610,6 +628,46 @@ mod tests {
             assert!(s.terminal.open, "nouveau shell marqué comme terminé");
             tape(&mut term, "echo en$((1+1))vie");
             attend(&mut term, &mut s, |s| texte(s).contains("en2vie"));
+            term.shutdown();
+        }
+
+        #[test]
+        fn job_de_fond_raccroche_a_la_fin_du_shell() {
+            let (mut term, mut s) = (sh(), ouvert());
+            term.sync(&mut s);
+            let exited = term.session.as_ref().map(|t| t.exited.clone());
+            // Borné à 10 s : pas de processus laissé si le test échoue. `echo` échoue dès le raccroché.
+            tape(
+                &mut term,
+                "(i=0; while [ $i -lt 100 ] && echo x; do sleep 0.1; i=$((i+1)); done) & exit",
+            );
+            attend(&mut term, &mut s, |s| !s.terminal.open);
+            let limite = Instant::now() + Duration::from_secs(3);
+            // Le lecteur rend sa copie d'`exited` en sortant, avec celle du maître.
+            while exited.as_ref().is_some_and(|e| Arc::strong_count(e) > 1) {
+                assert!(
+                    Instant::now() < limite,
+                    "PTY toujours ouvert 3 s après exit"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        #[test]
+        fn vue_remontee_figee_pendant_la_sortie() {
+            let (mut term, mut s) = (sh(), ouvert());
+            term.sync(&mut s);
+            tape(&mut term, "seq 1 100; echo FI''NI");
+            attend(&mut term, &mut s, |s| texte(s).contains("FINI"));
+            s.terminal.scroll = 5;
+            term.sync(&mut s);
+            let vue = s.terminal.lines.clone();
+            tape(&mut term, "seq 200 230");
+            attend(&mut term, &mut s, |s| s.terminal.scroll > 20);
+            assert_eq!(s.terminal.lines, vue);
+            s.terminal.scroll = 0;
+            attend(&mut term, &mut s, |s| texte(s).contains("230"));
+            assert_eq!(s.terminal.scroll, 0);
             term.shutdown();
         }
 

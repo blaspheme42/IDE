@@ -129,6 +129,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
         Event::Paste(text) if state.focus == crate::Focus::Terminal && state.help.is_none() => {
+            state.terminal.scroll = 0;
             vec![Command::TerminalPaste(text)]
         }
         Event::Paste(text) if state.focus == crate::Focus::Explorer => {
