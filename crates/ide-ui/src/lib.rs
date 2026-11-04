@@ -6,11 +6,12 @@ mod hover;
 pub mod icons;
 mod lsp;
 mod palette;
+mod terminal;
 pub mod theme;
 
 use ide_core::{
-    GitMark, LineEnding, Search, State, TAB_BAR_HEIGHT, banner_height, explorer_width,
-    gutter_width, search_bar_height, tab_label, tab_list, tab_scroll,
+    Focus, GitMark, LineEnding, Search, State, TAB_BAR_HEIGHT, banner_height, explorer_width,
+    gutter_width, search_bar_height, tab_label, tab_list, tab_scroll, terminal_height,
 };
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
@@ -44,18 +45,20 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         Constraint::Min(0),
     ])
     .areas(main);
-    // Même hauteur que `editor_size` : barres d'onglets, bandeau, recherche et panneau Problèmes pris sur la zone éditeur.
+    // Même hauteur que `editor_size` : barres d'onglets, bandeau, recherche, panneaux Problèmes et
+    // terminal pris sur la zone éditeur.
     let problems_h = if state.problems_open {
         lsp::PROBLEMS_HEIGHT
     } else {
         0
     };
-    let [tabs, banner, editor, bar, problems] = Layout::vertical([
+    let [tabs, banner, editor, bar, problems, terminal] = Layout::vertical([
         Constraint::Length(TAB_BAR_HEIGHT),
         Constraint::Length(banner_height(state)),
         Constraint::Min(0),
         Constraint::Length(search_bar_height(state)),
         Constraint::Length(problems_h),
+        Constraint::Length(terminal_height(state)),
     ])
     .areas(editor);
     let [gutter, text] =
@@ -234,11 +237,14 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     if state.problems_open {
         lsp::problems_panel(state, frame, problems, theme);
     }
+    if state.terminal.open {
+        terminal::panel(state, frame, terminal, theme);
+    }
     lsp::hover(state, frame, text, theme);
     lsp::completion(state, frame, text, theme);
 
-    // Focus explorateur : le curseur est celui de son invite, ou masqué.
-    let editor_focus = state.focus == ide_core::Focus::Editor;
+    // Focus ailleurs : le curseur est celui de l'invite de l'explorateur ou du shell, ou masqué.
+    let editor_focus = state.focus == Focus::Editor;
     if let Some(s) = &state.search {
         search_bar(s, bar, frame, editor_focus, theme);
     } else if let Some(row) = cur_row.filter(|_| {
@@ -264,17 +270,17 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         Some(b) => format!("{b} | "),
         None => String::new(),
     };
-    // Dossier du projet avant la branche ; rappel de sortie quand l'explorateur a le focus.
+    // Dossier du projet avant la branche ; rappel de sortie quand l'éditeur n'a pas le focus.
     let project = state
         .explorer
         .root
         .as_deref()
         .and_then(|r| r.file_name())
         .map_or_else(String::new, |n| format!("{} | ", n.to_string_lossy()));
-    let hint = if editor_focus {
-        ""
-    } else {
-        "Échap/Ctrl+E : retour au code | "
+    let hint = match state.focus {
+        Focus::Editor => "",
+        Focus::Explorer => "Échap/Ctrl+E : retour au code | ",
+        Focus::Terminal => "Alt+J : fermer | ",
     };
     let left = format!(
         " {hint}{project}{branch}{counts}{}{dirty} | {} ",
@@ -458,7 +464,7 @@ fn visible_slice(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ide_core::{CompletionItem, Diagnostic, Document, Severity};
+    use ide_core::{CompletionItem, Diagnostic, Document, Severity, TermColor, TermSpan};
     use ratatui::buffer::Cell;
     use ratatui::style::{Color, Modifier};
     use ratatui::{Terminal, backend::TestBackend};
@@ -1260,6 +1266,211 @@ mod tests {
                 .map(|x| t.backend().buffer()[(x, 23)].symbol())
                 .collect();
             assert!(" F1 Raccourcis ".starts_with(&l[..l.len().min(15)]), "{l}");
+        }
+    }
+
+    fn cellules(text: &str) -> TermSpan {
+        TermSpan {
+            text: text.into(),
+            ..TermSpan::default()
+        }
+    }
+
+    /// Terminal ouvert avec le focus, curseur en fin de seconde ligne de la grille.
+    fn terminal_ouvert() -> State {
+        let mut s = state(Document::from_text(
+            Some("a.rs".into()),
+            &"foo bar foo\n".repeat(40),
+        ));
+        s.focus = Focus::Terminal;
+        s.terminal.open = true;
+        s.terminal.lines = vec![vec![cellules("$ ls")], vec![cellules("$ ")]];
+        s.terminal.cursor = Some((1, 2));
+        s
+    }
+
+    #[test]
+    fn panneau_terminal() {
+        let s = terminal_ouvert();
+        let b = draw(&s);
+        insta::assert_snapshot!(b);
+        // 24 lignes : 11 pour le panneau, juste au-dessus de la barre de statut, large comme l'éditeur.
+        assert!(ligne(&b, 12)[..].contains("│ TERMINAL ─"));
+        assert!(ligne(&b, 13)[..].contains("│$ ls "));
+        assert_eq!(b.cursor_position(), Position::new(30 + 2, 12 + 1 + 1));
+        // Fermé : rien n'est dessiné, même avec une grille restante.
+        let mut ferme = terminal_ouvert();
+        ferme.terminal.open = false;
+        ferme.focus = Focus::Editor;
+        assert!(!(0..24).any(|y| ligne(&draw(&ferme), y).contains("TERMINAL")));
+    }
+
+    #[test]
+    fn terminal_bordure_selon_le_focus() {
+        let t = Theme::dark();
+        let mut s = terminal_ouvert();
+        let b = draw(&s);
+        assert!(a_style(&b.buffer()[(30, 12)], t.border_focus));
+        assert!(a_style(&b.buffer()[(35, 12)], t.border_focus), "titre");
+        assert!(a_style(&b.buffer()[(79, 12)], t.border_focus));
+        s.focus = Focus::Editor;
+        let b = draw(&s);
+        assert_eq!(b.buffer()[(30, 12)].fg, t.border);
+        assert_eq!(b.buffer()[(79, 12)].fg, t.border);
+    }
+
+    #[test]
+    fn hauteur_du_texte_egale_a_editor_size() {
+        let recherche_ouverte = recherche(None, 0).search;
+        for (problemes, barre, bandeau) in [
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+            (true, true, true),
+        ] {
+            let mut s = terminal_ouvert();
+            s.problems_open = problemes;
+            if barre {
+                s.search = recherche_ouverte.clone();
+            }
+            if bandeau {
+                s.backup_offer = Some(("/x/a.rs".into(), "copie".into()));
+            }
+            let b = draw(&s);
+            let rendues = (0..24).filter(|&y| ligne(&b, y).contains("foo bar foo"));
+            assert_eq!(
+                rendues.count(),
+                ide_core::editor_size(&s).1 as usize,
+                "{problemes} {barre} {bandeau}"
+            );
+            // La barre de recherche reste sur la zone éditeur, le panneau colle à la barre de statut.
+            let titre = 23 - terminal_height(&s);
+            assert!(ligne(&b, titre).contains(" TERMINAL "), "{titre}");
+        }
+    }
+
+    #[test]
+    fn problemes_et_terminal_ouverts_ensemble() {
+        let mut s = terminal_ouvert();
+        s.problems_open = true;
+        let b = draw(&s);
+        // 7 lignes de terminal (lignes 16 à 22) sous 8 de Problèmes (8 à 15).
+        assert_eq!(terminal_height(&s), 7);
+        assert!(ligne(&b, 8).contains(" PROBLÈMES (0) "));
+        assert!(ligne(&b, 9).contains("Aucun problème"));
+        assert!(ligne(&b, 16).contains(" TERMINAL "));
+        assert!(ligne(&b, 17).contains("$ ls"));
+        assert_eq!(b.cursor_position(), Position::new(32, 18));
+    }
+
+    #[test]
+    fn curseur_du_terminal() {
+        let mut s = terminal_ouvert();
+        s.help = Some(0);
+        assert_eq!(
+            draw(&s).cursor_position(),
+            Position::new(0, 0),
+            "sous l'aide"
+        );
+        s.help = None;
+        // Grille en retard sur la zone : ligne ou colonne hors du panneau.
+        for hors_zone in [(10, 0), (0, 50), (u16::MAX, u16::MAX)] {
+            s.terminal.cursor = Some(hors_zone);
+            assert_eq!(draw(&s).cursor_position(), Position::new(0, 0));
+        }
+        // Dernière cellule de la grille.
+        s.terminal.cursor = Some((9, 49));
+        assert_eq!(draw(&s).cursor_position(), Position::new(79, 22));
+        s.terminal.cursor = None;
+        assert_eq!(draw(&s).cursor_position(), Position::new(0, 0));
+        // Panneau ouvert sans le focus : le curseur reste celui de l'éditeur.
+        s.terminal.cursor = Some((1, 2));
+        s.focus = Focus::Editor;
+        assert_eq!(draw(&s).cursor_position(), Position::new(X, Y));
+    }
+
+    #[test]
+    fn barre_de_statut_focus_terminal() {
+        let mut s = terminal_ouvert();
+        let l = ligne(&draw(&s), 23);
+        assert!(
+            l.starts_with(" F1 Raccourcis  Alt+J : fermer | a.rs | Prêt"),
+            "{l}"
+        );
+        s.focus = Focus::Editor;
+        let l = ligne(&draw(&s), 23);
+        assert!(l.starts_with(" F1 Raccourcis  a.rs"), "{l}");
+    }
+
+    #[test]
+    fn terminal_couleurs_et_inverse() {
+        let mut s = terminal_ouvert();
+        s.terminal.lines = vec![vec![
+            cellules("a"),
+            TermSpan {
+                fg: TermColor::Idx(3),
+                bg: TermColor::Rgb(1, 2, 3),
+                ..cellules("b")
+            },
+            TermSpan {
+                inverse: true,
+                ..cellules("c")
+            },
+            TermSpan {
+                bold: true,
+                italic: true,
+                underline: true,
+                ..cellules("d")
+            },
+        ]];
+        let b = draw(&s);
+        let t = Theme::dark();
+        let cell = |x: u16| &b.buffer()[(30 + x, 13)];
+        assert_eq!((cell(0).fg, cell(0).bg), (t.foreground, t.background));
+        assert!(cell(0).modifier.is_empty());
+        assert_eq!(
+            (cell(1).fg, cell(1).bg),
+            (Color::Indexed(3), Color::Rgb(1, 2, 3))
+        );
+        assert_eq!(cell(2).modifier, Modifier::REVERSED);
+        assert_eq!((cell(2).fg, cell(2).bg), (t.foreground, t.background));
+        assert_eq!(
+            cell(3).modifier,
+            Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED
+        );
+        // Reste du panneau : fond de l'éditeur.
+        assert_eq!(cell(4).bg, t.background);
+        assert_eq!(b.buffer()[(30, 22)].bg, t.background);
+    }
+
+    #[test]
+    fn ligne_de_grille_trop_longue_coupee_sans_retour() {
+        let mut s = terminal_ouvert();
+        s.terminal.lines = vec![vec![cellules(&"日".repeat(100))], vec![cellules("suite")]];
+        let b = draw(&s);
+        // 25 caractères doubles dans les 50 colonnes, le reste n'arrive pas sur la ligne suivante.
+        assert_eq!(ligne(&b, 13).matches('日').count(), 25);
+        assert!(ligne(&b, 14).contains("│suite "));
+    }
+
+    #[test]
+    fn terminal_sur_ecran_minuscule() {
+        for (w, h) in [(1, 1), (5, 2), (5, 3), (30, 4), (80, 5), (80, 9), (80, 12)] {
+            for problemes in [false, true] {
+                let mut s = terminal_ouvert();
+                s.width = w;
+                s.height = h;
+                s.problems_open = problemes;
+                s.terminal.lines[0] = vec![cellules(&"x".repeat(300))];
+                s.terminal.cursor = Some((0, 0));
+                let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+                t.draw(|f| render_with(&s, f, &Theme::dark())).unwrap();
+                if terminal_height(&s) == 0 {
+                    // Panneau sans hauteur : pas de curseur fantôme.
+                    assert_eq!(t.backend().cursor_position(), Position::new(0, 0));
+                }
+            }
         }
     }
 }

@@ -4,6 +4,9 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) ; un
 
 ## [Non publié]
 
+### Ajouté
+- Terminal intégré (F-60) : panneau bas, un seul shell lancé dans le dossier du projet. `Ctrl+ù` (terminaux à protocole Kitty : kitty, foot, Ghostty, Alacritty, WezTerm) ou `Alt+J` (partout), aussi « Terminal : ouvrir / aller / fermer » dans la palette et `toggle_terminal` dans `[keys]` : fermé, l'ouvre et prend le focus ; ouvert sans focus, prend le focus ; ouvert avec focus, le ferme et rend le focus à l'éditeur. Avec le focus, tout va au shell sauf la bascule : `Ctrl+Q`, `Ctrl+P` et `F1` n'agissent pas sur l'IDE. Fermer le panneau garde le shell ; `exit` ferme le panneau et un nouveau shell démarre à la prochaine ouverture. Clic dans le panneau pour le focus, molette pour l'historique.
+
 ## [1.2.1] — 2026-11-03 · Infobulle en français, en-têtes C
 
 ### Documentation

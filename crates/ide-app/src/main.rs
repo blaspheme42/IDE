@@ -7,6 +7,7 @@ mod git;
 mod highlight;
 mod lsp;
 mod session;
+mod terminal;
 mod workspace;
 
 use std::path::PathBuf;
@@ -224,6 +225,11 @@ async fn run(
     let mut backups = backup::Backups::new(backup_dir);
     let mut backup_tick = tokio::time::interval(backup::PERIOD);
     backup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut term = terminal::Term::new(root.clone());
+    let output = term.output();
+    // Sortie du shell : au plus un rendu par trame, même sous un flot continu.
+    let mut frame = tokio::time::interval(std::time::Duration::from_millis(16));
+    frame.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut quitting = false;
     let result = async {
         loop {
@@ -248,6 +254,19 @@ async fn run(
                         continue;
                     }
                     Some(ev) = rx.recv() => ev,
+                    // `tick` d'abord : un futur annulé ne consomme pas le permis de `notified`.
+                    _ = async { frame.tick().await; output.notified().await } => {
+                        // Pas d'`update` hors fin du shell : `scroll_to_cursor` annulerait une vue
+                        // déplacée à la molette.
+                        let open = state.terminal.open;
+                        term.sync(&mut state);
+                        if open != state.terminal.open {
+                            // Panneau refermé : la zone visible de l'éditeur a grandi.
+                            highlighter.sync(&mut state);
+                        }
+                        terminal.draw(|f| ide_ui::render(&state, f))?;
+                        continue;
+                    }
                     // Après `rx` : la session et le fichier en argument sont ouverts avant, l'onglet
                     // actif rendu par `open_missing` est le bon.
                     found = &mut scan, if scanning => {
@@ -312,6 +331,8 @@ async fn run(
                     | Command::RequestFormat { .. }) => lsp.request(cmd),
                     // Alt+N comme Alt+B : l'offre réglée est traitée par `cleanup`.
                     Command::DiscardBackup(_) => {}
+                    Command::TerminalKey(k) => term.key(k),
+                    Command::TerminalPaste(text) => term.paste(&text),
                 }
             }
             send_backup(backups.cleanup(&state));
@@ -322,6 +343,8 @@ async fn run(
                 }
                 break;
             }
+            // Avant le coloriage : un échec du lancement referme le panneau.
+            term.sync(&mut state);
             highlighter.sync(&mut state);
             git.sync(&mut state, &tx);
             terminal.draw(|f| ide_ui::render(&state, f))?;
@@ -348,6 +371,7 @@ async fn run(
     if let Err(e) = backup_worker.await {
         tracing::error!("tâche des copies de secours : {e}");
     }
+    term.shutdown();
     lsp.shutdown().await;
     result
 }
