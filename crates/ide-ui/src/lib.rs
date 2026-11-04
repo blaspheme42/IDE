@@ -280,7 +280,7 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     let hint = match state.focus {
         Focus::Editor => "",
         Focus::Explorer => "Échap/Ctrl+E : retour au code | ",
-        Focus::Terminal => "Ctrl+ù/Alt+J : fermer le terminal | ",
+        Focus::Terminal => "Alt+J : fermer | ",
     };
     let left = format!(
         " {hint}{project}{branch}{counts}{}{dirty} | {} ",
@@ -1395,7 +1395,7 @@ mod tests {
         let mut s = terminal_ouvert();
         let l = ligne(&draw(&s), 23);
         assert!(
-            l.starts_with(" F1 Raccourcis  Ctrl+ù/Alt+J : fermer le terminal | a."),
+            l.starts_with(" F1 Raccourcis  Alt+J : fermer | a.rs | Prêt"),
             "{l}"
         );
         s.focus = Focus::Editor;
