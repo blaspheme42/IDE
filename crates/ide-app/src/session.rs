@@ -66,10 +66,29 @@ pub fn load(file: &Path) -> (Vec<TabView>, Option<PathBuf>) {
     (tabs, v["active"].as_str().map(PathBuf::from))
 }
 
+/// Dernier thème choisi, commun à tous les projets. Absent ou inconnu : `None`.
+pub fn load_theme(file: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(file).ok()?;
+    let name = text.trim();
+    ide_core::THEMES.contains(&name).then(|| name.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ide_core::{Event, Key, KeyInput, Modifiers, update};
+
+    #[test]
+    fn theme_memorise_valide_seulement() -> anyhow::Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let f = tmp.path().join("theme");
+        assert_eq!(load_theme(&f), None);
+        crate::files::save_atomic(&f, "rose")?;
+        assert_eq!(load_theme(&f).as_deref(), Some("rose"));
+        std::fs::write(&f, "disparu\n")?;
+        assert_eq!(load_theme(&f), None);
+        Ok(())
+    }
 
     #[test]
     fn aller_retour_et_onglet_disparu_ignore() -> anyhow::Result<()> {

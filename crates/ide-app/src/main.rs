@@ -114,8 +114,14 @@ async fn run(
     // Configuration d'abord (cachés, largeur du panneau, indentation), puis la racine :
     // l'arbre se charge pendant la lecture du fichier.
     let r = root.clone();
-    let (settings, errors) =
+    let (mut settings, errors) =
         tokio::task::spawn_blocking(move || ide_workspace::load_config(&r)).await?;
+    // Le dernier thème choisi passe avant la configuration : sinon `theme =` annulerait Alt+T.
+    let theme_file = state_dir.join("theme");
+    if let Some(theme) = session::load_theme(&theme_file) {
+        settings.theme = theme;
+    }
+    let first_theme = settings.theme.clone();
     for e in &errors {
         tracing::warn!("configuration : {e}");
     }
@@ -352,6 +358,12 @@ async fn run(
         anyhow::Ok(())
     }
     .await;
+    // Seulement s'il a changé : une autre instance fermée après ne remet pas l'ancien.
+    if state.settings.theme != first_theme
+        && let Err(e) = files::save_atomic(&theme_file, &state.settings.theme)
+    {
+        tracing::warn!("écriture du thème : {e}");
+    }
     // Sortie anormale (signal, terminal fermé, erreur) : dernière copie de tout ce qui est modifié,
     // et les copies restent pour le prochain démarrage. Un crash ou un kill -9 ne passe pas ici.
     if !quitting {

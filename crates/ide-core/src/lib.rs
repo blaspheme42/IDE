@@ -272,7 +272,7 @@ pub enum Command {
 }
 
 /// Thèmes embarqués, dans l'ordre de « Changer de thème » ; le premier est le défaut.
-pub const THEMES: [&str; 10] = [
+pub const THEMES: [&str; 20] = [
     "dark",
     "light",
     "gruvbox",
@@ -283,6 +283,16 @@ pub const THEMES: [&str; 10] = [
     "monokai",
     "tokyo-night",
     "catppuccin-latte",
+    "rose",
+    "automne",
+    "one-dark",
+    "catppuccin-mocha",
+    "rose-pine",
+    "everforest",
+    "kanagawa",
+    "ayu-mirage",
+    "gruvbox-light",
+    "github-light",
 ];
 
 /// Marque git d'une ligne dans la gouttière, par rapport à HEAD.
