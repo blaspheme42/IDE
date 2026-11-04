@@ -1024,7 +1024,9 @@ mod tests {
             update(&mut s, alt_t.clone());
             vus.push(s.settings.theme.clone());
         }
-        assert_eq!(vus, ["light", "gruvbox", "solarized-light", "dark"]);
+        let mut attendu = crate::THEMES.to_vec();
+        attendu.rotate_left(1);
+        assert_eq!(vus, attendu);
         assert_eq!(s.status, "Thème : dark");
         s.settings.theme = "inconnu".into();
         update(&mut s, alt_t.clone());

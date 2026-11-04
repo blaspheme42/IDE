@@ -22,7 +22,7 @@
 - **Language servers**: completion, hover, go-to-definition, diagnostics, and formatting (also on save). Servers start automatically when installed. A missing or crashed server never blocks editing.
 - **Syntax highlighting** (tree-sitter): Rust, C, Python, JavaScript, TypeScript (and TSX), HTML (and Vue), CSS, JSON, TOML, Markdown, PHP, Go.
 - **Integrated terminal**: bottom panel with shell tabs, running in the project folder. When it has focus, every key goes to the shell except the toggle and the tab keys, so `Ctrl+Q`, `Ctrl+P` and `F1` do not act on IDE. `Alt+T` opens a tab, `Alt+PageDown` / `Alt+PageUp` cycle through them, and clicking a number in the panel's top border activates that tab. Closing the panel keeps the shells; `exit` closes its tab, even in the background, and the panel closes with the last tab, so a new shell starts the next time you open it. Click the panel to focus it, use the mouse wheel for its history.
-- **Tabs, fuzzy file picker, command palette**, four themes (`dark`, `light`, `gruvbox`, `solarized-light`), configurable key bindings.
+- **Tabs, fuzzy file picker, command palette**, ten themes (`dark`, `light`, `gruvbox`, `solarized-light`, `solarized-dark`, `nord`, `dracula`, `monokai`, `tokyo-night`, `catppuccin-latte`), configurable key bindings.
 - **Safety**: backup copies of unsaved work, restored after a crash. Session (open tabs, cursor positions) restored on restart.
 
 ## Installation
@@ -163,7 +163,7 @@ When a file changes on disk, IDE reloads it if you have no unsaved changes. Othe
 
 ```toml
 [editor]
-theme = "dark"          # dark | light | gruvbox | solarized-light
+theme = "dark"          # dark | light | gruvbox | solarized-light | solarized-dark | nord | dracula | monokai | tokyo-night | catppuccin-latte
 line_numbers = true     # line numbers in the gutter
 tab_size = 4            # when no .editorconfig applies
 insert_spaces = true
