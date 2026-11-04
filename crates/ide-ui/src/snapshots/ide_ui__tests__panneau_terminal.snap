@@ -1,0 +1,28 @@
+---
+source: crates/ide-ui/src/lib.rs
+expression: b
+---
+"┌ EXPLORATEUR ───────────────┐ a.rs ×                                           "
+"│                            │    1   foo bar foo                               "
+"│                            │    2   foo bar foo                               "
+"│                            │    3   foo bar foo                               "
+"│                            │    4   foo bar foo                               "
+"│                            │    5   foo bar foo                               "
+"│                            │    6   foo bar foo                               "
+"│                            │    7   foo bar foo                               "
+"│                            │    8   foo bar foo                               "
+"│                            │    9   foo bar foo                               "
+"│                            │   10   foo bar foo                               "
+"│                            │   11   foo bar foo                               "
+"│                            │ TERMINAL ────────────────────────────────────────"
+"│                            │$ ls                                              "
+"│                            │$                                                 "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"│                            │                                                  "
+"└────────────────────────────┘                                                  "
+" F1 Raccourcis  Ctrl+ù/Alt+J : fermer le terminal | a. Ln 1, Col 1 | LF | UTF-8 "
