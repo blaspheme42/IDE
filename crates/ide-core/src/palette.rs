@@ -162,6 +162,11 @@ static COMMANDS: &[CommandInfo] = &[
         "Problèmes : afficher / masquer le panneau",
         with(Key::Char('m'), true, true),
     ),
+    cmd(
+        "toggle_terminal",
+        "Terminal : ouvrir / aller / fermer",
+        ctrl('ù'),
+    ),
 ];
 
 /// Écran d'aide (F1) : groupes de (touches, action). Touches séparées par « / » (un test vérifie que
@@ -270,6 +275,7 @@ pub static SHORTCUTS: &[(&str, &[(&str, &str)])] = &[
         "Panneaux",
         &[
             ("Ctrl+Shift+M", "Panneau Problèmes"),
+            ("Ctrl+Ù / Alt+J", "Terminal intégré"),
             ("F1", "Cet écran d'aide"),
         ],
     ),

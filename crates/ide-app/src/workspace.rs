@@ -64,7 +64,9 @@ fn execute(cmd: Command) -> Vec<Event> {
         | Command::RequestHover { .. }
         | Command::RequestDefinition { .. }
         | Command::RequestFormat { .. }
-        | Command::DiscardBackup(_) => {
+        | Command::DiscardBackup(_)
+        | Command::TerminalKey(_)
+        | Command::TerminalPaste(_) => {
             vec![]
         }
     }

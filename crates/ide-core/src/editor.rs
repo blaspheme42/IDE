@@ -2,7 +2,7 @@
 
 use crate::{
     Command, Document, Event, Key, KeyInput, MouseInput, MouseKind, State, TAB_BAR_HEIGHT, backup,
-    editor_size, explorer, lsp, palette, search, tabs,
+    editor_size, explorer, lsp, palette, search, tabs, terminal,
 };
 
 /// Colonnes réservées par l'UI à gauche du texte : marque git, numéro (au moins 4 chiffres) et espace
@@ -17,12 +17,15 @@ pub fn gutter_width(state: &State) -> u16 {
 }
 
 /// Lignes défilées par cran de molette.
-const WHEEL_LINES: usize = 3;
+pub(crate) const WHEEL_LINES: usize = 3;
 
 pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
-    // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite.
-    let wheel = matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown));
+    // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite. Pareil pour ce
+    // qui vise le terminal, sauf si le document bouge (rechargement disque, commande de la palette).
+    let keep_view = state.focus == crate::Focus::Terminal
+        || matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown) || terminal::owns_mouse(state, *m));
     let version = state.doc.version();
+    let cursor = state.doc.cursor();
     let mut cmds = match event {
         Event::Key(k) => key(state, k),
         Event::Mouse(m) if state.help.is_some() => {
@@ -31,6 +34,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
                 MouseKind::ScrollDown => scroll_help(state, WHEEL_LINES as isize),
                 _ => {}
             }
+            vec![]
+        }
+        Event::Mouse(m) if terminal::owns_mouse(state, m) => {
+            terminal::mouse(state, m);
             vec![]
         }
         Event::Mouse(m) => explorer::mouse(state, m).unwrap_or_else(|| {
@@ -121,6 +128,9 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             palette::paste(state, &text);
             vec![]
         }
+        Event::Paste(text) if state.focus == crate::Focus::Terminal && state.help.is_none() => {
+            vec![Command::TerminalPaste(text)]
+        }
         Event::Paste(text) if state.focus == crate::Focus::Explorer => {
             explorer::paste(state, &text);
             vec![]
@@ -154,6 +164,10 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             vec![]
         }
         Event::Tick => vec![],
+        Event::TerminalExited { error } => {
+            terminal::exited(state, error);
+            vec![]
+        }
         Event::BackupFound { path, text } => {
             backup::found(state, path, text);
             vec![]
@@ -218,7 +232,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     // Curseur amené dans un bloc replié (recherche, F12, annuler…) : on le déplie.
     let line = state.doc.cursor_line_col().0;
     state.doc.reveal(line);
-    if !wheel {
+    if !keep_view || state.doc.version() != version || state.doc.cursor() != cursor {
         scroll_to_cursor(state);
     }
     cmds
@@ -360,6 +374,7 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     {
         k.mods = crate::Modifiers::default();
     }
+    let pressed = k;
     // `[keys]` : la touche personnalisée rejoue le raccourci d'origine de sa commande.
     let replaying = std::mem::take(&mut state.replaying);
     let custom = (!replaying)
@@ -376,6 +391,9 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
     if !(ctrl('w') || ctrl('W')) && state.close_armed {
         state.close_armed = false;
         state.status.clear();
+    }
+    if let Some(cmds) = terminal::key(state, k, pressed, replaying) {
+        return cmds;
     }
     // Aide (F1) : modale, au-dessus de tout, même de la palette ; Ctrl+Q passe.
     if let Some(cmds) = help_key(state, k) {
