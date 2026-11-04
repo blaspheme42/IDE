@@ -77,6 +77,13 @@ fn toggle(state: &mut State) {
     }
 }
 
+/// Panneau invisible (écran trop petit) : touches et collages partiraient à l'aveugle, Ctrl+Q compris.
+pub(crate) fn release_hidden_focus(state: &mut State) {
+    if state.focus == Focus::Terminal && matches!(terminal_size(state), (0, _) | (_, 0)) {
+        state.focus = Focus::Editor;
+    }
+}
+
 /// `k` : touche après `[keys]`, qui décide de la bascule ; `pressed` : celle que le shell reçoit.
 /// `None` = touche laissée à la suite.
 pub(crate) fn key(
@@ -88,11 +95,8 @@ pub(crate) fn key(
     if state.help.is_some() || state.palette.is_some() {
         return None;
     }
-    // Panneau invisible (écran trop petit) : les touches partiraient à l'aveugle, Ctrl+Q compris.
-    if matches!(terminal_size(state), (0, _) | (_, 0)) && state.focus == Focus::Terminal {
-        state.focus = Focus::Editor;
-    }
-    if is_toggle(k) {
+    // `pressed` aussi : la bascule annoncée dans la barre sort du terminal même si `[keys]` la prend.
+    if is_toggle(k) || (state.focus == Focus::Terminal && is_toggle(pressed)) {
         toggle(state);
         return Some(vec![]);
     }
@@ -437,6 +441,48 @@ mod tests {
         s.terminal.scroll = 7;
         update(&mut s, Event::Paste("ls".into()));
         assert_eq!(s.terminal.scroll, 0);
+    }
+
+    #[test]
+    fn alt_j_sort_du_terminal_meme_pris_par_keys() {
+        let mut s = etat();
+        update(&mut s, bascule());
+        s.settings.keys = vec![(touche(Key::Char('j'), false, true), "save".into())];
+        assert!(update(&mut s, Event::Key(touche(Key::Char('j'), false, true))).is_empty());
+        assert!(!s.terminal.open);
+    }
+
+    #[test]
+    fn collage_sur_panneau_invisible_ne_part_pas_au_shell() {
+        let mut s = etat();
+        update(&mut s, bascule());
+        s.height = 2;
+        let cmds = update(&mut s, Event::Paste("rm x\n".into()));
+        assert!(!matches!(cmds.as_slice(), [Command::TerminalPaste(_)]));
+    }
+
+    #[test]
+    fn resize_recadre_l_editeur_meme_focus_terminal() {
+        let mut s = etat();
+        update(&mut s, Event::Key(touche(Key::End, true, false)));
+        update(
+            &mut s,
+            Event::Resize {
+                width: 80,
+                height: 40,
+            },
+        );
+        update(&mut s, bascule());
+        update(
+            &mut s,
+            Event::Resize {
+                width: 80,
+                height: 30,
+            },
+        );
+        let (_, rows) = crate::editor_size(&s);
+        let line = s.doc.cursor_line_col().0;
+        assert!(line < s.scroll_line + usize::from(rows), "{line}");
     }
 
     #[test]

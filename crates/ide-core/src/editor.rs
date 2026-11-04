@@ -20,12 +20,14 @@ pub fn gutter_width(state: &State) -> u16 {
 pub(crate) const WHEEL_LINES: usize = 3;
 
 pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
+    terminal::release_hidden_focus(state);
     // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite. Pareil pour ce
     // qui vise le terminal, sauf si le document bouge (rechargement disque, commande de la palette).
     let keep_view = state.focus == crate::Focus::Terminal
         || matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown) || terminal::owns_mouse(state, *m));
     let version = state.doc.version();
     let cursor = state.doc.cursor();
+    let size = editor_size(state);
     let mut cmds = match event {
         Event::Key(k) => key(state, k),
         Event::Mouse(m) if state.help.is_some() => {
@@ -233,7 +235,11 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     // Curseur amené dans un bloc replié (recherche, F12, annuler…) : on le déplie.
     let line = state.doc.cursor_line_col().0;
     state.doc.reveal(line);
-    if !keep_view || state.doc.version() != version || state.doc.cursor() != cursor {
+    if !keep_view
+        || state.doc.version() != version
+        || state.doc.cursor() != cursor
+        || editor_size(state) != size
+    {
         scroll_to_cursor(state);
     }
     cmds

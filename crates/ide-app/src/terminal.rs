@@ -82,6 +82,9 @@ impl Term {
         let mut command = CommandBuilder::new_default_prog();
         command.cwd(root);
         command.env("TERM", "xterm-256color");
+        // Ceux de l'IDE fausseraient la taille vue par les programmes : le PTY donne la bonne.
+        command.env_remove("LINES");
+        command.env_remove("COLUMNS");
         Self {
             command,
             output: Arc::new(Notify::new()),
