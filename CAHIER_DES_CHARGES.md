@@ -22,64 +22,66 @@ Question ouverte : nom du projet.
 
 La v1 couvre les 21 exigences « Must » ci-dessous ; les « Should » et « Could » viennent ensuite, dans l'ordre du planning. Priorités en MoSCoW : M = indispensable, S = important, C = bonus.
 
-| ID | Module | Exigence | Priorité |
-| --- | --- | --- | --- |
-| F-01 | Explorateur | Arborescence du dossier ouvert, repliable, dans un panneau gauche redimensionnable | M |
-| F-02 | Explorateur | Icône et couleur par extension et par nom de fichier (Nerd Fonts) | M |
-| F-03 | Explorateur | Créer, renommer, supprimer (vers la corbeille), déplacer un fichier ou dossier | M |
-| F-04 | Explorateur | Respect du `.gitignore`, fichiers cachés masquables | M |
-| F-05 | Explorateur | Rafraîchissement automatique sur changement disque (watcher) | S |
-| F-06 | Explorateur | Couleur des fichiers selon leur statut git (modifié, nouveau, ignoré) | S |
-| F-10 | Éditeur | Ouvrir, éditer, sauvegarder ; UTF-8, fins de ligne LF et CRLF conservées | M |
-| F-11 | Éditeur | Annuler / rétablir illimité par fichier | M |
-| F-12 | Éditeur | Sélection clavier et souris, copier / couper / coller via le presse-papiers système | M |
-| F-13 | Éditeur | Numéros de ligne, ligne courante surlignée, gouttière de diagnostics | M |
-| F-14 | Éditeur | Indentation automatique, tabulations ou espaces selon `.editorconfig` | M |
-| F-15 | Éditeur | Rechercher / remplacer dans le fichier, regex incluses | M |
-| F-16 | Éditeur | Multi-curseurs (Ctrl+D) | S |
-| F-17 | Éditeur | Repli de code (folding) basé sur tree-sitter | C |
-| F-20 | Onglets | Plusieurs fichiers ouverts en onglets, marqueur « non sauvegardé » | M |
-| F-21 | Onglets | Avertissement avant de fermer un fichier modifié | M |
-| F-22 | Onglets | Écran divisé vertical | S |
-| F-30 | Coloration | Coloration syntaxique tree-sitter : Rust, Python, C, JS/TS, HTML, CSS, JSON, TOML, Markdown | M |
-| F-31 | Coloration | Thème sombre et thème clair fournis | M |
-| F-40 | LSP | Démarrage automatique du serveur de langage selon l'extension | M |
-| F-41 | LSP | Autocomplétion en popup, déclenchée à la frappe et par Ctrl+Espace | M |
-| F-42 | LSP | Diagnostics (erreurs, warnings) soulignés et listés dans un panneau | M |
-| F-43 | LSP | Aller à la définition (F12), infobulle au survol (hover) | M |
-| F-44 | LSP | Renommer un symbole (F2), trouver les références | S |
-| F-45 | LSP | Formatage du document à la sauvegarde | S |
-| F-46 | LSP | Signature help et code actions | C |
-| F-50 | Recherche | Palette « ouvrir un fichier » floue (Ctrl+P) | M |
-| F-51 | Recherche | Palette de commandes (Ctrl+Shift+P) | M |
-| F-52 | Recherche | Recherche texte dans tout le projet (Ctrl+Shift+F, repli Alt+F hors protocole Kitty) | S |
-| F-60 | Terminal | Terminal intégré dans un panneau bas (Ctrl+ù) | S |
-| F-70 | Git | Branche courante dans la barre de statut | M |
-| F-71 | Git | Marques d'ajout / modification / suppression dans la gouttière | S |
-| F-72 | Git | Vue des changements et commit depuis l'IDE | C |
-| F-80 | Session | Réouvrir les onglets et la position du curseur au redémarrage | S |
+| ID   | Module      | Exigence                                                                                    | Priorité |
+| ---- | ----------- | ------------------------------------------------------------------------------------------- | -------- |
+| F-01 | Explorateur | Arborescence du dossier ouvert, repliable, dans un panneau gauche redimensionnable          | M        |
+| F-02 | Explorateur | Icône et couleur par extension et par nom de fichier (Nerd Fonts)                           | M        |
+| F-03 | Explorateur | Créer, renommer, supprimer (vers la corbeille), déplacer un fichier ou dossier              | M        |
+| F-04 | Explorateur | Respect du `.gitignore`, fichiers cachés masquables                                         | M        |
+| F-05 | Explorateur | Rafraîchissement automatique sur changement disque (watcher)                                | S        |
+| F-06 | Explorateur | Couleur des fichiers selon leur statut git (modifié, nouveau, ignoré)                       | S        |
+| F-10 | Éditeur     | Ouvrir, éditer, sauvegarder ; UTF-8, fins de ligne LF et CRLF conservées                    | M        |
+| F-11 | Éditeur     | Annuler / rétablir illimité par fichier                                                     | M        |
+| F-12 | Éditeur     | Sélection clavier et souris, copier / couper / coller via le presse-papiers système         | M        |
+| F-13 | Éditeur     | Numéros de ligne, ligne courante surlignée, gouttière de diagnostics                        | M        |
+| F-14 | Éditeur     | Indentation automatique, tabulations ou espaces selon `.editorconfig`                       | M        |
+| F-15 | Éditeur     | Rechercher / remplacer dans le fichier, regex incluses                                      | M        |
+| F-16 | Éditeur     | Multi-curseurs (Ctrl+D)                                                                     | S        |
+| F-17 | Éditeur     | Repli de code (folding) basé sur tree-sitter                                                | C        |
+| F-20 | Onglets     | Plusieurs fichiers ouverts en onglets, marqueur « non sauvegardé »                          | M        |
+| F-21 | Onglets     | Avertissement avant de fermer un fichier modifié                                            | M        |
+| F-22 | Onglets     | Écran divisé vertical                                                                       | S        |
+| F-30 | Coloration  | Coloration syntaxique tree-sitter : Rust, Python, C, JS/TS, HTML, CSS, JSON, TOML, Markdown | M        |
+| F-31 | Coloration  | Thème sombre et thème clair fournis                                                         | M        |
+| F-40 | LSP         | Démarrage automatique du serveur de langage selon l'extension                               | M        |
+| F-41 | LSP         | Autocomplétion en popup, déclenchée à la frappe et par Ctrl+Espace                          | M        |
+| F-42 | LSP         | Diagnostics (erreurs, warnings) soulignés et listés dans un panneau                         | M        |
+| F-43 | LSP         | Aller à la définition (F12), infobulle au survol (hover)                                    | M        |
+| F-44 | LSP         | Renommer un symbole (F2), trouver les références                                            | S        |
+| F-45 | LSP         | Formatage du document à la sauvegarde                                                       | S        |
+| F-46 | LSP         | Signature help et code actions                                                              | C        |
+| F-50 | Recherche   | Palette « ouvrir un fichier » floue (Ctrl+P)                                                | M        |
+| F-51 | Recherche   | Palette de commandes (Ctrl+Shift+P)                                                         | M        |
+| F-52 | Recherche   | Recherche texte dans tout le projet (Ctrl+Shift+F, repli Alt+F hors protocole Kitty)        | S        |
+| F-60 | Terminal    | Terminal intégré dans un panneau bas (Ctrl+ù)                                               | S        |
+| F-70 | Git         | Branche courante dans la barre de statut                                                    | M        |
+| F-71 | Git         | Marques d'ajout / modification / suppression dans la gouttière                              | S        |
+| F-72 | Git         | Vue des changements et commit depuis l'IDE                                                  | C        |
+| F-80 | Session     | Réouvrir les onglets et la position du curseur au redémarrage                               | S        |
+| F-81 | Raccourcie  | Ctrl + : = mise en commentaire en fonction du language                                      | M        |
 
 ## Exigences non fonctionnelles
 
 Aucune action de l'IDE ne doit pouvoir perdre une modification de l'utilisateur ; la performance vient juste après.
 
-| ID | Catégorie | Exigence | Mesure d'acceptation |
-| --- | --- | --- | --- |
-| NF-01 | Performance | Démarrage jusqu'à l'affichage | < 100 ms sur un dossier de 5 000 fichiers |
-| NF-02 | Performance | Latence de frappe | < 16 ms entre la touche et l'affichage |
-| NF-03 | Performance | Gros fichiers | Fichier de 50 Mo ouvert et éditable, coloration désactivée au-delà de 5 Mo |
-| NF-04 | Performance | Mémoire | < 100 Mo au repos, hors serveurs LSP |
-| NF-05 | Réactivité | Un serveur LSP lent ou planté ne bloque jamais l'interface | LSP tué en cours de session : l'édition continue, un message s'affiche |
-| NF-06 | Robustesse | Sauvegarde atomique (fichier temporaire puis renommage) | Coupure pendant la sauvegarde : l'ancien fichier reste intact |
-| NF-07 | Robustesse | Copie de secours des fichiers non sauvegardés toutes les 30 s | Crash simulé : les modifications sont proposées au redémarrage |
-| NF-08 | Robustesse | Le terminal est toujours restauré, même après un panic | Panic forcé : le shell reste utilisable |
-| NF-09 | Robustesse | Fichier modifié sur disque par un autre programme | L'IDE propose de recharger ou de garder sa version |
-| NF-10 | Compatibilité | Linux et macOS ; Windows via WSL | CI verte sur les deux OS |
-| NF-11 | Compatibilité | Terminaux : Alacritty, Kitty, WezTerm, GNOME Terminal, tmux | Test manuel avant chaque version |
-| NF-12 | Compatibilité | Sans Nerd Font, repli sur des icônes ASCII | Option `icons = "ascii"` |
-| NF-13 | Accessibilité | Toute action faisable au clavier seul | Aucune fonction réservée à la souris |
-| NF-14 | Accessibilité | Contrastes des thèmes fournis | Ratio ≥ 4,5:1 pour le texte (WCAG AA) |
-| NF-15 | Sécurité | Aucune exécution de code d'un projet ouvert sans action de l'utilisateur | Les serveurs LSP viennent du `PATH` ou de la config, jamais du projet |
+| ID    | Catégorie     | Exigence                                                                 | Mesure d'acceptation                                                       |
+| ----- | ------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| NF-01 | Performance   | Démarrage jusqu'à l'affichage                                            | < 100 ms sur un dossier de 5 000 fichiers                                  |
+| NF-02 | Performance   | Latence de frappe                                                        | < 16 ms entre la touche et l'affichage                                     |
+| NF-03 | Performance   | Gros fichiers                                                            | Fichier de 50 Mo ouvert et éditable, coloration désactivée au-delà de 5 Mo |
+| NF-04 | Performance   | Mémoire                                                                  | < 100 Mo au repos, hors serveurs LSP                                       |
+| NF-05 | Réactivité    | Un serveur LSP lent ou planté ne bloque jamais l'interface               | LSP tué en cours de session : l'édition continue, un message s'affiche     |
+| NF-06 | Robustesse    | Sauvegarde atomique (fichier temporaire puis renommage)                  | Coupure pendant la sauvegarde : l'ancien fichier reste intact              |
+| NF-07 | Robustesse    | Copie de secours des fichiers non sauvegardés toutes les 30 s            | Crash simulé : les modifications sont proposées au redémarrage             |
+| NF-08 | Robustesse    | Le terminal est toujours restauré, même après un panic                   | Panic forcé : le shell reste utilisable                                    |
+| NF-09 | Robustesse    | Fichier modifié sur disque par un autre programme                        | L'IDE propose de recharger ou de garder sa version                         |
+| NF-10 | Compatibilité | Linux et macOS ; Windows via WSL                                         | CI verte sur les deux OS                                                   |
+| NF-11 | Compatibilité | Terminaux : Alacritty, Kitty, WezTerm, GNOME Terminal, tmux              | Test manuel avant chaque version                                           |
+| NF-12 | Compatibilité | Sans Nerd Font, repli sur des icônes ASCII                               | Option `icons = "ascii"`                                                   |
+| NF-13 | Accessibilité | Toute action faisable au clavier seul                                    | Aucune fonction réservée à la souris                                       |
+| NF-14 | Accessibilité | Contrastes des thèmes fournis                                            | Ratio ≥ 4,5:1 pour le texte (WCAG AA)                                      |
+| NF-15 | Sécurité      | Aucune exécution de code d'un projet ouvert sans action de l'utilisateur | Les serveurs LSP viennent du `PATH` ou de la config, jamais du projet      |
+|       |               |                                                                          |                                                                            |
 
 ## Architecture technique
 
