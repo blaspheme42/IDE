@@ -15,6 +15,20 @@ static LATEST: AtomicU64 = AtomicU64::new(0);
 /// le résultat revient comme un événement sur `tx`.
 pub fn spawn(cmd: Command, tx: mpsc::Sender<Event>) {
     let copy = cmd.clone();
+    // Thread détaché : l'arrêt du runtime attend `spawn_blocking`, et une recherche lente (regex
+    // coûteuse, disque gelé) empêcherait l'IDE de quitter.
+    if matches!(cmd, Command::SearchText { .. }) {
+        std::thread::spawn(move || {
+            let events = std::panic::catch_unwind(|| execute(cmd))
+                .unwrap_or_else(|_| vec![failure(copy, "tâche interrompue".into())]);
+            for ev in events {
+                if tx.blocking_send(ev).is_err() {
+                    break;
+                }
+            }
+        });
+        return;
+    }
     tokio::spawn(async move {
         // Une panique dans la tâche devient une erreur affichée, pas une sortie de l'app.
         let events = tokio::task::spawn_blocking(move || execute(cmd))

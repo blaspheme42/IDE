@@ -23,7 +23,8 @@ pub struct Palette {
     pub query: String,
     /// Index dans `palette_items(state)`.
     pub selected: usize,
-    /// Classement mis en cache (index dans `project_files` ou `commands()`), recalculé seulement quand la
+    /// Classement mis en cache (index dans `project_files`, `commands()` ou les résultats de la recherche
+    /// dans le projet), recalculé seulement quand la
     /// requête, le type ou la liste des fichiers changent : pas de reclassement complet à chaque rendu.
     pub ranked: Vec<usize>,
 }
@@ -460,11 +461,16 @@ pub fn palette_items(state: &State) -> Vec<PaletteItem> {
         PaletteKind::Text => ids
             .map(|i| {
                 let hit = &state.project_search.hits[i];
-                let path = relative(state, &hit.location.path).display();
+                let path = relative(state, &hit.location.path);
+                let name = path.file_name().unwrap_or_default().display();
                 let line = hit.location.start.line + 1;
+                // Nom et ligne d'abord : un long chemin en tête les masquerait à l'affichage.
                 PaletteItem {
-                    label: format!("{path}:{line}: {}", hit.excerpt),
-                    detail: String::new(),
+                    label: format!("{name}:{line}: {}", hit.excerpt),
+                    detail: path
+                        .parent()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
                 }
             })
             .collect(),
@@ -1142,8 +1148,8 @@ mod tests {
         assert!(labels(&s).is_empty());
         assert!(s.project_search.searching);
         reponse(&mut s, vec![hit("/p/src/neuf.rs", 6, 2, "ab")]);
-        assert_eq!(labels(&s), ["src/neuf.rs:7: ab"]);
-        assert_eq!(palette_items(&s)[0].detail, "");
+        assert_eq!(labels(&s), ["neuf.rs:7: ab"]);
+        assert_eq!(palette_items(&s)[0].detail, "src");
         assert!(!s.project_search.searching);
     }
 

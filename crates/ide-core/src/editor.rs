@@ -218,6 +218,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
             if create {
                 tabs::open(state, path, |p| Document::from_text(Some(p), ""));
             }
+            state.pending_jump = None;
             state.status = format!("Impossible d'ouvrir {name} : {error}");
             vec![]
         }
@@ -926,6 +927,25 @@ mod tests {
         update(&mut s, ctrl_deux_points());
         assert_eq!(s.doc.rope().to_string(), "{}");
         assert_eq!(s.status, "Pas de commentaire connu pour ce fichier");
+    }
+
+    #[test]
+    fn ouverture_echouee_oublie_le_saut() {
+        let mut s = opened("");
+        s.pending_jump = Some(crate::Location {
+            path: "/x/b.rs".into(),
+            start: crate::Position::default(),
+            end: crate::Position::default(),
+        });
+        update(
+            &mut s,
+            Event::OpenFailed {
+                path: "/x/b.rs".into(),
+                error: "non".into(),
+                create: false,
+            },
+        );
+        assert!(s.pending_jump.is_none());
     }
 
     #[test]

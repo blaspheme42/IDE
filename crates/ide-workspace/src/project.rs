@@ -1,5 +1,6 @@
 //! Vue d'ensemble du projet : tous ses fichiers (palette Ctrl+P), recherche texte (F-52) et branche git (F-70).
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use ide_core::{Location, Position, TextHit};
@@ -12,6 +13,9 @@ const MAX_FILES: usize = 100_000;
 const MAX_HITS: usize = 1000;
 /// Au-delà, un fichier n'est pas lu par `search_text`.
 const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
+/// shortcut: seul le début d'une ligne géante (bundle minifié) est cherché, une regex coûteuse y
+/// prendrait des minutes ; rendre la recherche interruptible pour tout parcourir.
+const MAX_LINE_BYTES: usize = 100 * 1024;
 /// Caractères gardés avant l'occurrence dans un extrait, et dans tout l'extrait.
 const EXCERPT_CONTEXT: usize = 20;
 const EXCERPT_CHARS: usize = 200;
@@ -34,7 +38,7 @@ pub fn list_files(root: &Path, show_hidden: bool) -> Vec<PathBuf> {
 }
 
 /// Lignes des fichiers de `list_files` où `re` trouve une occurrence non vide (la première de la ligne),
-/// et `true` si le plafond coupe la liste. Sautés : fichiers trop gros, illisibles ou non UTF-8.
+/// et `true` si un plafond coupe la liste. Sautés : fichiers trop gros, illisibles ou non UTF-8.
 /// `None` : `stop` a répondu vrai, testé entre deux fichiers.
 pub fn search_text(
     root: &Path,
@@ -43,17 +47,25 @@ pub fn search_text(
     stop: impl Fn() -> bool,
 ) -> Option<(Vec<TextHit>, bool)> {
     let mut hits = Vec::new();
-    for path in list_files(root, show_hidden) {
+    let files = list_files(root, show_hidden);
+    let capped = files.len() >= MAX_FILES;
+    for path in files {
         if stop() {
             return None;
         }
-        if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_FILE_BYTES) {
+        // `take` et non `metadata` : un pseudo-fichier annonce 0 octet, un autre peut grossir.
+        let mut text = String::new();
+        let read = std::fs::File::open(&path)
+            .and_then(|f| f.take(MAX_FILE_BYTES + 1).read_to_string(&mut text));
+        if !read.is_ok_and(|n| n as u64 <= MAX_FILE_BYTES) {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
         for (line_no, line) in text.lines().enumerate() {
+            let mut end = line.len().min(MAX_LINE_BYTES);
+            while !line.is_char_boundary(end) {
+                end -= 1;
+            }
+            let line = &line[..end];
             let Some(m) = re.find_iter(line).find(|m| !m.is_empty()) else {
                 continue;
             };
@@ -75,7 +87,7 @@ pub fn search_text(
             });
         }
     }
-    Some((hits, false))
+    Some((hits, capped))
 }
 
 /// Extrait de `line` qui montre l'occurrence à l'octet `start`, même au fond d'une ligne minifiée :
@@ -89,7 +101,10 @@ fn excerpt(line: &str, start: usize) -> String {
         .nth(EXCERPT_CONTEXT - 1)
         .map_or(0, |(i, _)| i);
     let shown = trimmed[from..].chars().take(EXCERPT_CHARS);
-    let shown = shown.map(|c| if c.is_control() { ' ' } else { c });
+    // Les marques bidi réordonneraient l'affichage de la ligne.
+    let hidden =
+        |c: char| c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+    let shown = shown.map(|c| if hidden(c) { ' ' } else { c });
     (if from > 0 { "…" } else { "" })
         .chars()
         .chain(shown)
@@ -253,6 +268,22 @@ mod tests {
         };
         assert!(search_text(d.path(), false, &regex("x", false, false), stop).is_none());
         Ok(())
+    }
+
+    #[test]
+    fn ligne_geante_cherchee_jusqu_au_plafond_sans_couper_un_caractere() -> Result<()> {
+        let d = tempfile::tempdir()?;
+        let line = format!("{}début{}fin", "é".repeat(100), "é".repeat(MAX_LINE_BYTES));
+        fs::write(d.path().join("a.js"), line)?;
+        let re = |p| Regex::new(p).expect("regex");
+        assert_eq!(cherche(d.path(), &re("début")).0.len(), 1);
+        assert!(cherche(d.path(), &re("fin")).0.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn marques_bidi_neutralisees_dans_l_extrait() {
+        assert_eq!(excerpt("a\u{202e}b\u{2066}c", 0), "a b c");
     }
 
     #[test]

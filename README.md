@@ -142,7 +142,7 @@ Clipboard: copy and paste inside IDE always work. Sharing the clipboard with Win
 | `Alt+Backspace` | Delete previous word |
 | `Tab` / `Shift+Tab` | Indent / unindent; `Tab` also expands Emmet `!` and `!!!` |
 | `Ctrl+F` / `Ctrl+H` | Find / replace (`F3` next, `Alt+Enter` replace all, `Alt+R` regex, `Alt+C` match case) |
-| `Ctrl+Shift+F` (kitty, WezTerm, foot, Ghostty, Alacritty) / `Alt+F` (everywhere) | Search the project: results as you type, `Alt+R` regex, `Alt+C` match case, `Enter` opens the result (also in the palette, remappable as `project_search`). Reads files from disk, so unsaved changes are not searched; skips non-UTF-8 files and files over 5 MiB; stops at 1000 results |
+| `Ctrl+Shift+F` (kitty, WezTerm, foot, Ghostty, Alacritty) / `Alt+F` (everywhere) | Search the project: results as you type, `Alt+R` regex, `Alt+C` match case, `Enter` opens the result (also in the palette, remappable as `project_search`). Reads files from disk, so unsaved changes are not searched; hidden files (unless shown) and symbolic links are skipped, and only the first 100 KiB of a line is searched; skips non-UTF-8 files and files over 5 MiB; stops at 1000 results |
 | `Alt+-` / `Alt+=` | Fold / unfold the block at the cursor (or click `-` / `+` in the gutter) |
 | `Alt+_` / `Alt++` | Fold / unfold everything |
 | `Alt+L` / `Alt+T` | Show / hide line numbers, switch to the next theme |
