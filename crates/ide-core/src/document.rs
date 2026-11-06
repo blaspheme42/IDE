@@ -10,6 +10,9 @@ use unicode_width::UnicodeWidthStr;
 use crate::history::{Change, Entry, History, Kind};
 
 mod fold;
+mod wrap;
+
+pub use wrap::VisualRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LineEnding {
@@ -119,6 +122,35 @@ fn grapheme_bounds(s: &str) -> Vec<usize> {
         bounds.push(chars);
     }
     bounds
+}
+
+/// Colonne d'affichage de l'index de `char` `char_col` dans `text`, tabulations relatives à son début.
+fn col_of_char(text: &str, char_col: usize, tab: usize) -> usize {
+    let mut col = 0;
+    let mut chars = 0;
+    for g in text.graphemes(true) {
+        chars += g.chars().count();
+        if chars > char_col {
+            break;
+        }
+        col = advance(col, g, tab);
+    }
+    col
+}
+
+/// Index de `char` le plus à droite de `text` dont la colonne d'affichage ≤ `target`.
+fn char_of_col(text: &str, target: usize, tab: usize) -> usize {
+    let mut col = 0;
+    let mut chars = 0;
+    for g in text.graphemes(true) {
+        let next = advance(col, g, tab);
+        if next > target {
+            break;
+        }
+        col = next;
+        chars += g.chars().count();
+    }
+    chars
 }
 
 /// Colonne d'affichage atteinte après le graphème `g` placé à la colonne `col` (taquets tous les `tab`).
@@ -247,18 +279,7 @@ impl Document {
 
     /// Colonne d'affichage de l'index de `char` `char_col` dans la ligne `line`.
     pub fn display_col(&self, line: usize, char_col: usize) -> usize {
-        let text = self.line_text(line);
-        let tab = self.tab_width();
-        let mut col = 0;
-        let mut chars = 0;
-        for g in text.graphemes(true) {
-            chars += g.chars().count();
-            if chars > char_col {
-                break;
-            }
-            col = advance(col, g, tab);
-        }
-        col
+        col_of_char(&self.line_text(line), char_col, self.tab_width())
     }
 
     /// Nombre de `char` de la ligne hors fin de ligne (selon le découpage de ropey).
@@ -277,22 +298,6 @@ impl Document {
             1
         };
         full - brk
-    }
-
-    /// Index de `char` (relatif à la ligne) le plus à droite dont la colonne d'affichage ≤ `target`.
-    fn char_col_for_display(&self, line: usize, target: usize) -> usize {
-        let tab = self.tab_width();
-        let mut col = 0;
-        let mut chars = 0;
-        for g in self.line_text(line).graphemes(true) {
-            let next = advance(col, g, tab);
-            if next > target {
-                break;
-            }
-            col = next;
-            chars += g.chars().count();
-        }
-        chars
     }
 
     fn prev_boundary(&self, pos: usize) -> usize {
@@ -785,7 +790,7 @@ impl Document {
     /// Index de `char` à la colonne d'affichage `col` de `line` ; ligne bornée au document, fin de ligne au-delà.
     pub fn pos_at(&self, line: usize, col: usize) -> usize {
         let line = line.min(self.rope.len_lines() - 1);
-        self.rope.line_to_char(line) + self.char_col_for_display(line, col)
+        self.rope.line_to_char(line) + char_of_col(&self.line_text(line), col, self.tab_width())
     }
 
     /// Déplacements par graphème (gauche/droite) et par ligne avec colonne d'affichage préférée (haut/bas).
@@ -806,19 +811,10 @@ impl Document {
     }
     /// Lignes visibles seulement : un bloc replié compte pour une ligne.
     pub fn move_up(&mut self, lines: usize, extend: bool) {
-        let line = self.rope.char_to_line(self.cursor);
-        self.move_to_line(self.step_visible(line, lines, false), extend);
+        self.move_rows(lines, false, None, extend);
     }
     pub fn move_down(&mut self, lines: usize, extend: bool) {
-        let line = self.rope.char_to_line(self.cursor);
-        self.move_to_line(self.step_visible(line, lines, true), extend);
-    }
-    fn move_to_line(&mut self, line: usize, extend: bool) {
-        let target = self
-            .preferred_col
-            .unwrap_or_else(|| self.cursor_line_col().1);
-        self.set_cursor(self.pos_at(line, target), extend);
-        self.preferred_col = Some(target);
+        self.move_rows(lines, true, None, extend);
     }
     pub fn move_line_start(&mut self, extend: bool) {
         let pos = self.rope.line_to_char(self.rope.char_to_line(self.cursor));

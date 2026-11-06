@@ -60,7 +60,7 @@ impl Document {
     }
 
     /// `line` si visible, sinon la ligne visible qui suit (`forward`) ou l'en-tête du repli.
-    fn skip_hidden(&self, hidden: &[Range<usize>], line: usize, forward: bool) -> usize {
+    pub(super) fn skip_hidden(&self, hidden: &[Range<usize>], line: usize, forward: bool) -> usize {
         match hidden.iter().find(|r| r.contains(&line)) {
             Some(r) if forward && r.end < self.rope.len_lines() => r.end,
             Some(r) => r.start - 1,
@@ -102,19 +102,6 @@ impl Document {
             line = next;
         }
         out
-    }
-
-    /// Rangées d'écran entre la ligne visible `from` et `to` ; `None` si `to` est avant ou masquée.
-    pub fn rows_between(&self, from: usize, to: usize) -> Option<usize> {
-        let hidden = self.hidden();
-        if to < from || hidden.iter().any(|r| r.contains(&to)) {
-            return None;
-        }
-        let masked: usize = hidden
-            .iter()
-            .map(|r| r.end.min(to).saturating_sub(r.start.max(from)))
-            .sum();
-        Some(to - from - masked)
     }
 
     /// Replie ou déplie l'en-tête `line` ; `false` si elle n'ouvre pas de bloc.
@@ -253,8 +240,6 @@ mod tests {
         let mut d = doc();
         assert!(d.toggle_fold(1));
         assert_eq!(d.visible_lines(0, 4), vec![0, 1, 3, 4]);
-        assert_eq!(d.rows_between(0, 3), Some(2));
-        assert_eq!(d.rows_between(0, 2), None);
         d.set_cursor(d.pos_at(1, 0), false);
         d.move_down(1, false);
         assert_eq!(d.cursor_line_col().0, 3);

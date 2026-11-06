@@ -492,6 +492,8 @@ fn convert(ev: ct::Event) -> Option<Event> {
                 MouseEventKind::Up(MouseButton::Left) => MouseKind::Up,
                 MouseEventKind::ScrollUp => MouseKind::ScrollUp,
                 MouseEventKind::ScrollDown => MouseKind::ScrollDown,
+                MouseEventKind::ScrollLeft => MouseKind::ScrollLeft,
+                MouseEventKind::ScrollRight => MouseKind::ScrollRight,
                 _ => return None,
             };
             Some(Event::Mouse(MouseInput {
@@ -713,6 +715,8 @@ mod tests {
             (MouseEventKind::Up(MouseButton::Left), MouseKind::Up),
             (MouseEventKind::ScrollUp, MouseKind::ScrollUp),
             (MouseEventKind::ScrollDown, MouseKind::ScrollDown),
+            (MouseEventKind::ScrollLeft, MouseKind::ScrollLeft),
+            (MouseEventKind::ScrollRight, MouseKind::ScrollRight),
         ] {
             assert_eq!(convert(souris(k, KeyModifiers::NONE)), mouse(attendu, none));
         }
@@ -727,6 +731,17 @@ mod tests {
             )),
             mouse(MouseKind::Down, shift)
         );
+        for (k, attendu) in [
+            (MouseEventKind::ScrollUp, MouseKind::ScrollUp),
+            (MouseEventKind::ScrollDown, MouseKind::ScrollDown),
+            (MouseEventKind::ScrollLeft, MouseKind::ScrollLeft),
+            (MouseEventKind::ScrollRight, MouseKind::ScrollRight),
+        ] {
+            assert_eq!(
+                convert(souris(k, KeyModifiers::SHIFT)),
+                mouse(attendu, shift)
+            );
+        }
     }
 
     #[test]
@@ -736,7 +751,6 @@ mod tests {
             MouseEventKind::Drag(MouseButton::Middle),
             MouseEventKind::Up(MouseButton::Right),
             MouseEventKind::Moved,
-            MouseEventKind::ScrollLeft,
         ] {
             assert_eq!(convert(souris(k, KeyModifiers::NONE)), None);
         }

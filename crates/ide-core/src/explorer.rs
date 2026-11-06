@@ -494,6 +494,7 @@ pub(crate) fn mouse(state: &mut State, m: MouseInput) -> Option<Vec<Command>> {
         }
         // L'éditeur ignore déjà un glisser qui n'a pas commencé dans le texte, et prolonge celui qui y a commencé.
         MouseKind::Drag | MouseKind::Up => return None,
+        MouseKind::ScrollLeft | MouseKind::ScrollRight => {}
     }
     Some(cmds)
 }
@@ -1210,6 +1211,7 @@ mod tests {
         s.tabs.push(crate::Tab {
             doc: crate::Document::from_text(Some(p("a/x/z")), ""),
             scroll_line: 0,
+            scroll_row: 0,
             scroll_col: 0,
         });
         let (from, to) = (p("a"), p("b/a"));
