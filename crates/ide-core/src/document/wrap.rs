@@ -346,6 +346,15 @@ mod tests {
         assert_eq!(d.selection(), Some(1..8));
     }
 
+    #[test]
+    #[ignore = "bug: wrap_starts rebalaie toute la ligne à chaque appel, 240 à 520 ms par touche en release sur 1 Mo (NF-02 : 16 ms)"]
+    fn bas_sous_16_ms_sur_une_ligne_de_1_mo() {
+        let mut d = doc(&"lorem ipsum ".repeat(83_334));
+        let debut = std::time::Instant::now();
+        d.move_rows(1, true, Some(50), false);
+        assert!(debut.elapsed().as_millis() < 16, "{:?}", debut.elapsed());
+    }
+
     fn texte() -> impl Strategy<Value = String> {
         "[a-c é中\t\n]{0,40}"
     }

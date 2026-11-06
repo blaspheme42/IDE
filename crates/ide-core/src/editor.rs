@@ -1515,6 +1515,105 @@ mod tests {
         assert_eq!(s.scroll_col, 6);
     }
 
+    /// Événements arrivés sans action de l'utilisateur, sans rapport avec la vue.
+    fn evenements_de_fond() -> [Event; 4] {
+        [
+            Event::GitBranch(None),
+            Event::DiskChanged(vec![]),
+            Event::Diagnostics {
+                path: "/x/a.txt".into(),
+                items: vec![],
+            },
+            Event::Tick,
+        ]
+    }
+
+    #[test]
+    #[ignore = "bug: tout événement de fond repasse par scroll_to_cursor et annule la vue déplacée à la molette"]
+    fn wrap_molette_verticale_gardee_par_les_evenements_de_fond() {
+        for ev in evenements_de_fond() {
+            let mut s = enroule(&"a".repeat(108));
+            update(&mut s, souris(MouseKind::ScrollDown, 40, 2));
+            assert_eq!(vue(&s), (0, 3));
+            update(&mut s, ev.clone());
+            assert_eq!(vue(&s), (0, 3), "{ev:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "bug: tout événement de fond repasse par scroll_to_cursor et annule le décalage de la molette horizontale"]
+    fn molette_horizontale_gardee_par_les_evenements_de_fond() {
+        for ev in evenements_de_fond() {
+            let mut s = large(&"a".repeat(30));
+            update(&mut s, souris(MouseKind::ScrollRight, 40, 1));
+            assert_eq!(s.scroll_col, 6);
+            update(&mut s, ev.clone());
+            assert_eq!(s.scroll_col, 6, "{ev:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "bug: onglet cliqué depuis le terminal, même curseur : scroll_col d'avant Alt+Z reste appliqué en wrap"]
+    fn wrap_clic_d_onglet_depuis_le_terminal_sans_decalage_perime() {
+        let mut s = large(&"a".repeat(30));
+        update(&mut s, k(Key::End));
+        let ouvert = Event::FileOpened {
+            path: "/x/b.txt".into(),
+            text: "b".repeat(30),
+        };
+        update(&mut s, ouvert);
+        update(&mut s, k(Key::End));
+        assert_eq!(s.scroll_col, 21);
+        tabs::activate(&mut s, 0);
+        update(&mut s, alt_z());
+        update(&mut s, alt_touche('j'));
+        assert_eq!(s.focus, crate::Focus::Terminal);
+        let spans = tabs::tab_spans(&s);
+        let (onglet, _) = spans.iter().find(|(_, i)| *i == 1).expect("onglet b");
+        update(&mut s, souris(MouseKind::Down, onglet.start, 0));
+        assert_eq!(s.doc.display_name(), "b.txt");
+        assert_eq!(s.scroll_col, 0);
+    }
+
+    #[test]
+    fn wrap_curseur_visible_apres_redimensionnement() {
+        let mut s = enroule(&format!("{}\nz", "mot ".repeat(50)));
+        update(&mut s, k(Key::End));
+        update(&mut s, k(Key::End));
+        for (width, height) in [(40, 7), (33, 5), (31, 3), (120, 30), (48, 7)] {
+            update(&mut s, Event::Resize { width, height });
+            assert!(curseur_visible(&s), "{width}x{height}");
+        }
+    }
+
+    #[test]
+    fn wrap_frappe_qui_renvoie_le_mot_a_la_rangee_suivante() {
+        let mut s = enroule("abcd efgh\nz");
+        s.doc.set_cursor(4, false);
+        update(&mut s, k(Key::Char('x')));
+        assert_eq!(rangee(&s), (0, 0, 5));
+        update(&mut s, k(Key::Char('y')));
+        update(&mut s, k(Key::Char('z')));
+        update(&mut s, k(Key::Char('t')));
+        assert_eq!(rangee(&s), (0, 0, 8));
+        update(&mut s, k(Key::Char('u')));
+        update(&mut s, k(Key::Char('v')));
+        // Mot de 10 colonnes, plus large que la rangée de 9 : coupé à la colonne.
+        assert_eq!(rangee(&s), (0, 1, 1));
+        assert!(curseur_visible(&s));
+    }
+
+    #[test]
+    fn alt_z_garde_la_selection() {
+        let mut s = large(&"a".repeat(30));
+        update(&mut s, avec(Key::Right, false, true));
+        update(&mut s, avec(Key::Right, false, true));
+        update(&mut s, alt_z());
+        assert_eq!(s.doc.selection(), Some(0..2));
+        update(&mut s, alt_z());
+        assert_eq!(s.doc.selection(), Some(0..2));
+    }
+
     #[test]
     fn ctrl_z_y_et_ctrl_shift_z() {
         let mut s = opened("a");
