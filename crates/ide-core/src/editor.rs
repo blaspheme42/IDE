@@ -1529,7 +1529,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "bug: tout événement de fond repasse par scroll_to_cursor et annule la vue déplacée à la molette"]
     fn wrap_molette_verticale_gardee_par_les_evenements_de_fond() {
         for ev in evenements_de_fond() {
             let mut s = enroule(&"a".repeat(108));
@@ -1541,7 +1540,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "bug: tout événement de fond repasse par scroll_to_cursor et annule le décalage de la molette horizontale"]
     fn molette_horizontale_gardee_par_les_evenements_de_fond() {
         for ev in evenements_de_fond() {
             let mut s = large(&"a".repeat(30));
@@ -1553,7 +1551,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "bug: onglet cliqué depuis le terminal, même curseur : scroll_col d'avant Alt+Z reste appliqué en wrap"]
     fn wrap_clic_d_onglet_depuis_le_terminal_sans_decalage_perime() {
         let mut s = large(&"a".repeat(30));
         update(&mut s, k(Key::End));
