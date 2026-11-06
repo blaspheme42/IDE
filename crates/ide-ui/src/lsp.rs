@@ -12,7 +12,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::theme::Theme;
 
 pub(crate) use ide_core::{PROBLEMS_HEIGHT, diagnostic_counts};
-use ide_core::{problems, visible_completions};
+use ide_core::{problems, visible_completions, wrap_width};
 
 /// Symbole d'une sévérité, ASCII sans Nerd Font.
 pub(crate) fn icon(s: Severity, nerd: bool) -> &'static str {
@@ -63,13 +63,13 @@ pub(crate) fn visible_diagnostics(
 
 /// Position écran (x, y) de l'index de `char` `pos` du document actif, si visible dans `text`.
 fn screen_pos(state: &State, text: Rect, pos: usize) -> Option<(u16, u16)> {
-    let rope = state.doc.rope();
-    let line = rope.char_to_line(pos.min(rope.len_chars()));
-    let col = state.doc.display_col(line, pos - rope.line_to_char(line));
-    let dy = state.doc.rows_between(state.scroll_line, line)?;
+    let wrap = wrap_width(state);
+    let (line, sub, col) = state.doc.row_col(pos, wrap);
+    let top = (state.scroll_line, state.scroll_row);
+    let rows = state.doc.visual_rows(top, text.height as usize, wrap);
+    let dy = rows.iter().position(|r| (r.line, r.sub) == (line, sub))?;
     let dx = col.checked_sub(state.scroll_col)?;
-    (dy < text.height as usize && dx < text.width as usize)
-        .then(|| (text.x + dx as u16, text.y + dy as u16))
+    (dx < text.width as usize).then(|| (text.x + dx as u16, text.y + dy as u16))
 }
 
 /// Cadre de `h` lignes intérieures sous la ligne `y` (au-dessus si `above` ou pas la place
