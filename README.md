@@ -146,6 +146,8 @@ Clipboard: copy and paste inside IDE always work. Sharing the clipboard with Win
 | `Alt+-` / `Alt+=` | Fold / unfold the block at the cursor (or click `-` / `+` in the gutter) |
 | `Alt+_` / `Alt++` | Fold / unfold everything |
 | `Alt+L` / `Alt+T` | Show / hide line numbers, switch to the next theme |
+| `Alt+Z` | Word wrap on / off: lines break at spaces, up / down move by visual row, `Home` / `End` go to the edge of the row, then of the line (also in the palette, remappable as `toggle_word_wrap`) |
+| Horizontal wheel / `Shift+wheel` | Scroll sideways (depends on the terminal) |
 | `Ctrl+Space` | Completion (also appears as you type) |
 | `Ctrl+K` / `F12` | Hover info / go to definition |
 | `Alt+Shift+F` | Format the file (also `Ctrl+0` in kitty, WezTerm, foot, Ghostty, Alacritty) |
@@ -167,6 +169,7 @@ When a file changes on disk, IDE reloads it if you have no unsaved changes. Othe
 [editor]
 theme = "dark"          # dark | light | gruvbox | solarized-light | solarized-dark | nord | dracula | monokai | tokyo-night | catppuccin-latte | rose | automne | one-dark | catppuccin-mocha | rose-pine | everforest | kanagawa | ayu-mirage | gruvbox-light | github-light
 line_numbers = true     # line numbers in the gutter
+word_wrap = false       # wrap long lines at the window edge
 tab_size = 4            # when no .editorconfig applies
 insert_spaces = true
 format_on_save = true   # format with the language server on Ctrl+S

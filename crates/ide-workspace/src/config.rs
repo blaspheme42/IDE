@@ -123,6 +123,7 @@ fn editor_key(s: &mut Settings, key: &str, v: &Value) -> Result<(), String> {
         "insert_spaces" => s.indent.use_tabs = !bool_of(v)?,
         "format_on_save" => s.format_on_save = bool_of(v)?,
         "line_numbers" => s.line_numbers = bool_of(v)?,
+        "word_wrap" => s.word_wrap = bool_of(v)?,
         "icons" => match str_of(v)? {
             "nerd" => s.nerd_icons = true,
             "ascii" => s.nerd_icons = false,
@@ -244,6 +245,15 @@ mod tests {
         );
         assert!(!s.nerd_icons);
         assert_eq!((s.explorer_width, s.show_hidden), (40, true));
+        Ok(())
+    }
+
+    #[test]
+    fn retour_a_la_ligne() -> Result<()> {
+        assert!(!Settings::default().word_wrap);
+        let (s, errors) = load(Some("[editor]\nword_wrap = true\n"), None)?;
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(s.word_wrap);
         Ok(())
     }
 

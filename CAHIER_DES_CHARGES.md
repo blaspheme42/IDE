@@ -38,6 +38,7 @@ La v1 couvre les 21 exigences « Must » ci-dessous ; les « Should » et « Cou
 | F-15 | Éditeur     | Rechercher / remplacer dans le fichier, regex incluses                                      | M        |
 | F-16 | Éditeur     | Multi-curseurs (Ctrl+D)                                                                     | S        |
 | F-17 | Éditeur     | Repli de code (folding) basé sur tree-sitter                                                | C        |
+| F-18 | Éditeur     | Retour à la ligne visuel basculable, molette horizontale                                    | C        |
 | F-20 | Onglets     | Plusieurs fichiers ouverts en onglets, marqueur « non sauvegardé »                          | M        |
 | F-21 | Onglets     | Avertissement avant de fermer un fichier modifié                                            | M        |
 | F-22 | Onglets     | Écran divisé vertical                                                                       | S        |
