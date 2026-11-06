@@ -11,7 +11,7 @@ pub mod theme;
 
 use ide_core::{
     Focus, GitMark, LineEnding, Search, State, TAB_BAR_HEIGHT, banner_height, explorer_width,
-    gutter_width, search_bar_height, tab_label, tab_list, tab_scroll, terminal_height,
+    gutter_width, search_bar_height, tab_label, tab_list, tab_scroll, terminal_height, wrap_width,
 };
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
@@ -94,16 +94,28 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
         .and_then(|s| s.current)
         .and_then(|i| matches.get(i));
     // NF-03 : seules les lignes visibles sont parcourues ; un bloc replié compte pour une.
-    let shown = doc.visible_lines(state.scroll_line, text.height as usize);
-    let visible = shown
+    let wrap = wrap_width(state);
+    let top = (state.scroll_line, state.scroll_row);
+    let rows = doc.visual_rows(top, text.height as usize, wrap);
+    let visible = rows
         .first()
-        .map_or(0..0, |&a| a..shown[shown.len() - 1] + 1);
+        .map_or(0..0, |a| a.line..rows[rows.len() - 1].line + 1);
     let diags = lsp::visible_diagnostics(state, &visible);
-    let cur_row = shown.iter().position(|&l| l == cur_line);
+    let (_, cur_sub, cur_x) = doc.row_col(doc.cursor(), wrap);
+    let cur_row = rows
+        .iter()
+        .position(|r| (r.line, r.sub) == (cur_line, cur_sub));
+    // En wrap, la rangée est déjà calibrée par graphème alors que `visible_slice` compte par char.
+    let slice_width = if wrap.is_some() {
+        usize::MAX / 2
+    } else {
+        text.width as usize
+    };
     let nerd = state.settings.nerd_icons;
     let mut numbers = Vec::new();
     let mut lines = Vec::new();
-    for &i in &shown {
+    for group in rows.chunk_by(|a, b| a.line == b.line) {
+        let i = group[0].line;
         let folded = doc.is_folded(i);
         let style = if i == cur_line {
             theme.gutter_current
@@ -135,7 +147,8 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
             Some(GitMark::DeletedBelow) => ("▁", theme.git_deleted),
             Some(GitMark::DeletedAbove) => ("▔", theme.git_deleted),
         };
-        let mut row = vec![Span::styled(bar, Style::new().fg(color))];
+        let mark = Span::styled(bar, Style::new().fg(color));
+        let mut row = vec![mark.clone()];
         if state.settings.line_numbers {
             let w = usize::from(gutter.width).saturating_sub(4);
             row.push(Span::styled(format!("{:>w$} ", i + 1), style));
@@ -153,7 +166,7 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
             ),
             marker,
         ]);
-        numbers.push(Line::from(row));
+        let head = Line::from(row);
         // Sélection ramenée en index de char relatifs à la ligne (vide si hors ligne).
         let sel = selection.as_ref().map_or(0..0, rel);
         // Occurrences touchant la ligne : triées, la première trouvée par recherche binaire.
@@ -191,38 +204,49 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
             .checked_sub(1)
             .filter(|k| sel.contains(k))
             .map(|_| theme.selection);
-        let mut spans = visible_slice(
-            line.chars(),
-            state.scroll_col,
-            text.width as usize,
-            doc.tab_width(),
-            eol,
-            |k| {
-                // Priorité : sélection > occurrence (courante ou non) > coloration seule.
-                // Diagnostic : souligné de sa couleur, la couleur du texte reste celle de la coloration.
-                let mut base = find(&colors, k).unwrap_or_default();
-                if let Some((_, sev)) = marks.iter().find(|(r, _)| r.contains(&k)) {
-                    base = base
-                        .add_modifier(Modifier::UNDERLINED)
-                        .underline_color(lsp::color(*sev, theme));
-                }
-                if sel.contains(&k) {
-                    base.patch(theme.selection)
-                } else if brackets.is_some_and(|(a, b)| start + k == a || start + k == b) {
-                    base.patch(theme.bracket_match)
-                } else {
-                    find(&hits, k).map_or(base, |s| base.patch(s))
-                }
-            },
-        );
-        if folded {
-            spans.push(Span::styled(" ⋯", Style::new().fg(theme.gutter)));
+        let style_of = |k| {
+            // Priorité : sélection > occurrence (courante ou non) > coloration seule.
+            // Diagnostic : souligné de sa couleur, la couleur du texte reste celle de la coloration.
+            let mut base = find(&colors, k).unwrap_or_default();
+            if let Some((_, sev)) = marks.iter().find(|(r, _)| r.contains(&k)) {
+                base = base
+                    .add_modifier(Modifier::UNDERLINED)
+                    .underline_color(lsp::color(*sev, theme));
+            }
+            if sel.contains(&k) {
+                base.patch(theme.selection)
+            } else if brackets.is_some_and(|(a, b)| start + k == a || start + k == b) {
+                base.patch(theme.bracket_match)
+            } else {
+                find(&hits, k).map_or(base, |s| base.patch(s))
+            }
+        };
+        for r in group {
+            numbers.push(if r.sub == 0 {
+                head.clone()
+            } else {
+                Line::from(mark.clone())
+            });
+            // shortcut: après un emoji ZWJ, `visible_slice` compte chaque char et son taquet de tabulation peut différer de `row_col`, à aligner s'il passe aux graphèmes.
+            let mut spans = visible_slice(
+                line.slice(r.chars.clone()).chars(),
+                state.scroll_col,
+                slice_width,
+                doc.tab_width(),
+                eol,
+                |k| style_of(k + r.chars.start),
+            );
+            // Fin de ligne et non dernière rangée affichée : celle-ci peut être tronquée en bas d'écran.
+            if folded && r.chars.end == line.len_chars() {
+                spans.push(Span::styled(" ⋯", Style::new().fg(theme.gutter)));
+            }
+            lines.push(Line::from(spans));
         }
-        lines.push(Line::from(spans));
     }
     frame.render_widget(Paragraph::new(numbers), gutter);
     // Ligne courante posée avant le texte pour que le fond des occurrences reste visible.
-    if let Some(row) = cur_row.filter(|_| selection.is_none()) {
+    let current_rows = rows.iter().enumerate().filter(|(_, r)| r.line == cur_line);
+    for (row, _) in current_rows.filter(|_| selection.is_none()) {
         let y = text.y + row as u16;
         frame.buffer_mut().set_style(
             Rect {
@@ -248,12 +272,11 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
     if let Some(s) = &state.search {
         search_bar(s, bar, frame, editor_focus, theme);
     } else if let Some(row) = cur_row.filter(|_| {
-        editor_focus
-            && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_col)
+        editor_focus && (state.scroll_col..state.scroll_col + text.width as usize).contains(&cur_x)
     }) && state.help.is_none()
     {
         frame.set_cursor_position(Position::new(
-            text.x + (cur_col - state.scroll_col) as u16,
+            text.x + (cur_x - state.scroll_col) as u16,
             text.y + row as u16,
         ));
     }
@@ -1522,5 +1545,170 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Largeur de retour dans `draw` : zone texte de 42 colonnes, moins la cellule du curseur.
+    const W: usize = 41;
+
+    fn enroule(text: &str) -> State {
+        let mut s = state(Document::from_text(Some("/p/src/a.rs".into()), text));
+        s.settings.word_wrap = true;
+        s
+    }
+
+    /// `n` fois `x` puis 10 `y` : deux rangées dès que `n` vaut `W`.
+    fn longue(n: usize) -> String {
+        format!("{}{}\nz", "x".repeat(n), "y".repeat(10))
+    }
+
+    fn enroule_selection(text: &str, sel: Range<usize>) -> TestBackend {
+        let mut s = enroule(text);
+        s.doc.set_cursor(sel.start, false);
+        s.doc.set_cursor(sel.end, true);
+        draw(&s)
+    }
+
+    #[test]
+    fn wrap_gouttiere_vide_sur_rangee_de_suite() {
+        let mut s = enroule(&longue(W));
+        let ds = vec![diag(0, 0, 0, 1, Severity::Error)];
+        s.diagnostics.insert("/p/src/a.rs".into(), ds);
+        s.git_marks = vec![Some(GitMark::Added), None];
+        let b = draw(&s);
+        assert_eq!(cells(&b, Y, 30..38), "▎   1  ✖");
+        assert_eq!(cells(&b, Y + 1, 30..38), "▎       ");
+        assert_eq!(b.buffer()[(30, Y + 1)].fg, Theme::dark().git_added);
+        assert_eq!(cells(&b, Y + 2, 30..38), "    2   ");
+        assert_eq!(cells(&b, Y, X..X + 42), format!("{} ", "x".repeat(W)));
+        assert_eq!(cells(&b, Y + 1, X..X + 11), format!("{} ", "y".repeat(10)));
+        assert_eq!(cells(&b, Y + 2, X..X + 2), "z ");
+    }
+
+    #[test]
+    fn wrap_repli_sur_la_derniere_rangee() {
+        let mut s = enroule(&format!("{}\n    x\n    y\nb", "a".repeat(W + 4)));
+        s.doc.toggle_fold(0);
+        let b = draw(&s);
+        assert_eq!(cells(&b, Y, 36..37), "+");
+        assert_eq!(cells(&b, Y + 1, 36..37), " ");
+        assert!(!ligne(&b, Y).contains('⋯'));
+        assert_eq!(cells(&b, Y + 1, X..X + 6), "aaaa ⋯");
+        assert_eq!(cells(&b, Y + 2, X..X + 1), "b");
+        // Tronquée en bas d'écran : la rangée affichée n'est pas la dernière de la ligne.
+        let text = format!("{}{}\n    x\nb", "l\n".repeat(21), "a".repeat(W + 4));
+        let mut s = enroule(&text);
+        s.doc.toggle_fold(21);
+        let b = draw(&s);
+        assert_eq!(cells(&b, Y + 21, 33..37), "22 +");
+        assert!(!ligne(&b, Y + 21).contains('⋯'));
+    }
+
+    #[test]
+    fn wrap_selection_a_cheval_sur_deux_rangees() {
+        let b = enroule_selection(&longue(W), W - 2..W + 2);
+        assert_eq!(inverses(&b, 0, 42), [39, 40]);
+        assert_eq!(inverses(&b, 1, 42), [0, 1]);
+        // Styles en index de ligne : seul `y`, après la tabulation de début de rangée.
+        let text = format!("{}\ty", "x".repeat(W));
+        let b = enroule_selection(&text, W + 1..W + 2);
+        assert_eq!(inverses(&b, 0, 42), [] as [u16; 0]);
+        assert_eq!(inverses(&b, 1, 42), [4]);
+    }
+
+    #[test]
+    fn wrap_eol_sur_la_derniere_rangee() {
+        let fin = W + 10;
+        let b = enroule_selection(&longue(W), 0..fin + 1);
+        assert_eq!(inverses(&b, 0, 42), (0..41).collect::<Vec<_>>());
+        assert_eq!(inverses(&b, 1, 42), (0..11).collect::<Vec<_>>());
+        let b = enroule_selection(&longue(W), 0..fin);
+        assert_eq!(inverses(&b, 1, 42), (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn wrap_curseur_sur_sa_rangee_statut_logique() {
+        let mut s = enroule(&longue(W));
+        s.doc.set_cursor(W + 4, false);
+        let b = draw(&s);
+        assert_eq!(b.cursor_position(), Position::new(X + 4, Y + 1));
+        assert!(ligne(&b, 23).contains("Ln 1, Col 46"), "{}", ligne(&b, 23));
+    }
+
+    #[test]
+    fn wrap_popup_sous_la_rangee_du_curseur() {
+        let mut s = enroule(&format!("{}\n{}", "x".repeat(W + 6), "z\n".repeat(30)));
+        s.doc.set_cursor(W + 6, false);
+        s.completion = Some(ide_core::Completion {
+            items: vec![item("xx", "fn", None)],
+            selected: 0,
+            anchor: W + 4,
+            path: None,
+            incomplete: false,
+        });
+        let b = draw(&s);
+        // Rangée 1, ancre en colonne 4 : bord gauche une cellule avant.
+        assert_eq!(cells(&b, Y + 2, X + 3..X + 10), "┌─────┐");
+        assert_eq!(cells(&b, Y + 3, X + 3..X + 10), "│fn xx│");
+    }
+
+    #[test]
+    fn wrap_ligne_pleine_exactement_a_la_largeur() {
+        let text = format!("{}\nz", "x".repeat(W));
+        let mut s = enroule(&text);
+        s.doc.set_cursor(W, false);
+        let b = draw(&s);
+        assert_eq!(b.cursor_position(), Position::new(X + W as u16, Y));
+        assert_eq!(cells(&b, Y + 1, 34..35), "2");
+        assert_eq!(cells(&b, Y + 1, X..X + 1), "z");
+        // Le saut de ligne sélectionné tient dans la cellule gardée au curseur.
+        let b = enroule_selection(&text, 0..W + 1);
+        assert_eq!(inverses(&b, 0, 42), (0..42).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn wrap_vue_commencant_dans_une_ligne() {
+        let mut s = enroule(&longue(W));
+        s.scroll_row = 1;
+        s.doc.set_cursor(W + 4, false);
+        let b = draw(&s);
+        assert_eq!(cells(&b, Y, 30..38), " ".repeat(8));
+        assert_eq!(cells(&b, Y, X..X + 10), "y".repeat(10));
+        assert_eq!(cells(&b, Y + 1, 34..35), "2");
+        assert_eq!(b.cursor_position(), Position::new(X + 4, Y));
+        // Curseur sur la rangée au-dessus de la vue : masqué, sa ligne garde le fond.
+        s.doc.set_cursor(0, false);
+        let b = draw(&s);
+        assert_eq!(b.cursor_position(), Position::new(0, 0));
+        assert_eq!(b.buffer()[(79, Y)].bg, Theme::dark().current_line);
+    }
+
+    #[test]
+    fn wrap_fond_sur_toutes_les_rangees_de_la_ligne_courante() {
+        let mut s = enroule(&format!("{}\nz", "x".repeat(2 * W + 5)));
+        s.doc.set_cursor(W + 1, false);
+        let b = draw(&s);
+        let t = Theme::dark();
+        for y in 0..3 {
+            assert_eq!(b.buffer()[(79, Y + y)].bg, t.current_line, "rangée {y}");
+        }
+        assert_eq!(b.buffer()[(79, Y + 3)].bg, t.background);
+    }
+
+    #[test]
+    fn wrap_inactif_identique() {
+        let text = longue(W);
+        let mut s = state(Document::from_text(None, &text));
+        s.scroll_row = 1;
+        s.doc.set_cursor(W + 4, false);
+        let b = draw(&s);
+        assert_eq!(cells(&b, Y, X..X + 42), format!("{}y", "x".repeat(W)));
+        assert_eq!(cells(&b, Y + 1, 34..35), "2");
+        // Colonne 45 hors des 42 visibles sans défilement : curseur masqué.
+        assert_eq!(b.cursor_position(), Position::new(0, 0));
+        // Lignes assez courtes : activer le retour ne change aucune cellule.
+        let mut s = state(Document::from_text(None, "un\n\tdeux\n\ntrois"));
+        let sans = draw(&s);
+        s.settings.word_wrap = true;
+        assert_eq!(draw(&s).buffer(), sans.buffer());
     }
 }
