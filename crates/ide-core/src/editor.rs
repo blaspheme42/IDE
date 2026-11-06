@@ -293,6 +293,7 @@ fn mouse(state: &mut State, m: MouseInput) {
         MouseKind::ScrollDown => {
             state.scroll_line = state.doc.step_visible(state.scroll_line, WHEEL_LINES, true);
         }
+        MouseKind::ScrollLeft | MouseKind::ScrollRight => {}
         MouseKind::Up => state.dragging = false,
         // Clic dans la gouttière : replie ou déplie le bloc de la ligne.
         MouseKind::Down

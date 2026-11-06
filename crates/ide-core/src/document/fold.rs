@@ -60,7 +60,7 @@ impl Document {
     }
 
     /// `line` si visible, sinon la ligne visible qui suit (`forward`) ou l'en-tête du repli.
-    fn skip_hidden(&self, hidden: &[Range<usize>], line: usize, forward: bool) -> usize {
+    pub(super) fn skip_hidden(&self, hidden: &[Range<usize>], line: usize, forward: bool) -> usize {
         match hidden.iter().find(|r| r.contains(&line)) {
             Some(r) if forward && r.end < self.rope.len_lines() => r.end,
             Some(r) => r.start - 1,

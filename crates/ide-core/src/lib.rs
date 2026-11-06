@@ -13,7 +13,7 @@ mod search;
 mod tabs;
 mod terminal;
 
-pub use document::{Document, Indent, LineEnding, TextEdit};
+pub use document::{Document, Indent, LineEnding, TextEdit, VisualRow};
 pub use editor::gutter_width;
 pub use explorer::{Explorer, FsChange, FsEntry, Node, Prompt, PromptKind};
 pub use lsp::{
@@ -73,6 +73,8 @@ pub enum MouseKind {
     Up,
     ScrollUp,
     ScrollDown,
+    ScrollLeft,
+    ScrollRight,
 }
 
 /// Événement souris ; coordonnées écran 0-based.
@@ -339,6 +341,8 @@ pub struct Settings {
     pub lsp: Vec<LspServer>,
     /// Raccourcis personnalisés (`[keys]`) : touche → nom de commande de la palette.
     pub keys: Vec<(KeyInput, String)>,
+    /// Retour à la ligne visuel des lignes longues (Alt+Z).
+    pub word_wrap: bool,
 }
 
 impl Default for Settings {
@@ -353,6 +357,7 @@ impl Default for Settings {
             format_on_save: true,
             lsp: default_servers(),
             keys: Vec::new(),
+            word_wrap: false,
         }
     }
 }
@@ -378,6 +383,8 @@ pub struct State {
     pub active: usize,
     /// Première ligne et première colonne d'affichage visibles dans l'éditeur.
     pub scroll_line: usize,
+    /// Rangée de `scroll_line` affichée en haut de vue (retour à la ligne visuel).
+    pub scroll_row: usize,
     pub scroll_col: usize,
     /// Ctrl+Q déjà pressé une fois avec des modifications non sauvegardées.
     pub quit_armed: bool,
@@ -460,6 +467,19 @@ pub fn search_bar_height(state: &State) -> u16 {
 /// Bandeau sous la barre d'onglets, tant qu'une copie de secours attend Alt+B / Alt+N : 0 ou 1 ligne.
 pub fn banner_height(state: &State) -> u16 {
     u16::from(state.backup_offer.is_some())
+}
+
+/// Colonnes de texte de l'éditeur, hors gouttière.
+pub(crate) fn text_width(state: &State) -> usize {
+    usize::from(editor_size(state).0.saturating_sub(gutter_width(state))).max(1)
+}
+
+/// Largeur de retour à la ligne, `None` s'il est désactivé ; une cellule reste au curseur en fin de ligne pleine.
+pub fn wrap_width(state: &State) -> Option<usize> {
+    state
+        .settings
+        .word_wrap
+        .then(|| text_width(state).saturating_sub(1).max(1))
 }
 
 /// Taille (colonnes, lignes) de la zone de texte : tout sauf l'explorateur, les barres d'onglets,
