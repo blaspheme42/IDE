@@ -67,8 +67,14 @@ impl Document {
         wrap: Option<usize>,
     ) -> Vec<VisualRow> {
         let mut out = Vec::with_capacity(n);
-        let mut skip = top.1;
-        for line in self.visible_lines(top.0, n) {
+        let lines = self.visible_lines(top.0, n);
+        // `sub` visait une ligne masquée : son en-tête s'affiche depuis sa première rangée.
+        let mut skip = if lines.first() == Some(&top.0) {
+            top.1
+        } else {
+            0
+        };
+        for line in lines {
             let starts = self.row_starts(line, wrap);
             let len = self.rope.line(line).len_chars();
             for sub in std::mem::take(&mut skip).min(starts.len() - 1)..starts.len() {
@@ -112,7 +118,8 @@ impl Document {
         }
         let hidden = self.hidden();
         let mut line = self.skip_hidden(&hidden, from.0.min(self.rope.len_lines() - 1), false);
-        let mut sub = from.1.min(self.row_starts(line, wrap).len() - 1);
+        let from_sub = if line == from.0 { from.1 } else { 0 };
+        let mut sub = from_sub.min(self.row_starts(line, wrap).len() - 1);
         let mut left = n;
         while left > sub && line > 0 {
             left -= sub + 1;
@@ -252,6 +259,15 @@ mod tests {
         assert_eq!(d.pos_in_row(0, 99, 1, w), 4);
         assert_eq!(d.pos_in_row(99, 99, 0, w), 7);
         assert_eq!(d.visual_rows((99, 99), 2, w).len(), 1);
+    }
+
+    #[test]
+    fn sub_d_une_ligne_masquee_repart_de_l_en_tete() {
+        let mut d = doc("if x {\n  abcdefgh\n}\n");
+        d.toggle_fold(0);
+        let rows = d.visual_rows((1, 2), 1, Some(3));
+        assert_eq!((rows[0].line, rows[0].sub), (0, 0));
+        assert_eq!(d.step_rows((1, 2), 0, false, Some(3)), (0, 0));
     }
 
     #[test]

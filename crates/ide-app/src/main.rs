@@ -490,12 +490,6 @@ fn convert(ev: ct::Event) -> Option<Event> {
                 MouseEventKind::Down(MouseButton::Left) => MouseKind::Down,
                 MouseEventKind::Drag(MouseButton::Left) => MouseKind::Drag,
                 MouseEventKind::Up(MouseButton::Left) => MouseKind::Up,
-                MouseEventKind::ScrollUp if m.modifiers.contains(KeyModifiers::SHIFT) => {
-                    MouseKind::ScrollLeft
-                }
-                MouseEventKind::ScrollDown if m.modifiers.contains(KeyModifiers::SHIFT) => {
-                    MouseKind::ScrollRight
-                }
                 MouseEventKind::ScrollUp => MouseKind::ScrollUp,
                 MouseEventKind::ScrollDown => MouseKind::ScrollDown,
                 MouseEventKind::ScrollLeft => MouseKind::ScrollLeft,
@@ -738,8 +732,8 @@ mod tests {
             mouse(MouseKind::Down, shift)
         );
         for (k, attendu) in [
-            (MouseEventKind::ScrollUp, MouseKind::ScrollLeft),
-            (MouseEventKind::ScrollDown, MouseKind::ScrollRight),
+            (MouseEventKind::ScrollUp, MouseKind::ScrollUp),
+            (MouseEventKind::ScrollDown, MouseKind::ScrollDown),
             (MouseEventKind::ScrollLeft, MouseKind::ScrollLeft),
             (MouseEventKind::ScrollRight, MouseKind::ScrollRight),
         ] {

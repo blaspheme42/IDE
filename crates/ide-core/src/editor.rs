@@ -25,9 +25,17 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     terminal::release_hidden_focus(state);
     // La molette déplace la vue sans le curseur : ne pas la ramener sur lui ensuite. Pareil pour ce
     // qui vise le terminal, sauf si le document bouge (rechargement disque, commande de la palette)
-    // ou si le panneau se ferme (taille de l'éditeur).
+    // ou si le panneau se ferme (taille de l'éditeur). Un événement de fond (LSP, git, disque) n'a
+    // pas à annuler un défilement non plus : s'il déplace le curseur, le test final le rattrape.
     let keep_view = state.focus == crate::Focus::Terminal
-        || matches!(&event, Event::TerminalExited { .. })
+        || !matches!(
+            &event,
+            Event::Key(_)
+                | Event::Mouse(_)
+                | Event::Paste(_)
+                | Event::Resize { .. }
+                | Event::ConfigLoaded { .. }
+        )
         || matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown | MouseKind::ScrollLeft | MouseKind::ScrollRight) || terminal::owns_mouse(state, *m));
     let version = state.doc.version();
     let cursor = state.doc.cursor();
@@ -275,6 +283,14 @@ fn mouse(state: &mut State, m: MouseInput) {
     let bottom = top + editor_size(state).1;
     let wrap = crate::wrap_width(state);
     let view = (state.scroll_line, state.scroll_row);
+    // Shift+molette va de côté, sauf en wrap où il n'y a rien à décaler. Traduit ici : l'aide,
+    // l'explorateur et le terminal gardent leur défilement vertical.
+    let kind = match m.kind {
+        MouseKind::ScrollUp if m.mods.shift && wrap.is_none() => MouseKind::ScrollLeft,
+        MouseKind::ScrollDown if m.mods.shift && wrap.is_none() => MouseKind::ScrollRight,
+        kind => kind,
+    };
+    let m = MouseInput { kind, ..m };
     match m.kind {
         MouseKind::Down if m.row < TAB_BAR_HEIGHT => {
             state.dragging = false;
@@ -1349,6 +1365,71 @@ mod tests {
         s.replaying = true;
         update(&mut s, alt_z());
         assert_eq!((s.settings.word_wrap, s.scroll_col), (true, 0));
+    }
+
+    #[test]
+    fn evenement_de_fond_garde_le_defilement() {
+        let mut s = large(&"a".repeat(30));
+        update(&mut s, souris(MouseKind::ScrollRight, 40, 1));
+        update(&mut s, Event::GitBranch(None));
+        assert_eq!(s.scroll_col, 6);
+    }
+
+    #[test]
+    fn shift_molette_de_cote_sauf_en_wrap() {
+        let shift = |kind| {
+            Event::Mouse(MouseInput {
+                kind,
+                column: 40,
+                row: 1,
+                mods: Modifiers {
+                    shift: true,
+                    ..Modifiers::default()
+                },
+            })
+        };
+        let mut s = large(&format!("{}\n{}", "a".repeat(30), "b\n".repeat(20)));
+        update(&mut s, shift(MouseKind::ScrollDown));
+        assert_eq!((s.scroll_col, s.scroll_line), (6, 0));
+        update(&mut s, shift(MouseKind::ScrollUp));
+        assert_eq!((s.scroll_col, s.scroll_line), (0, 0));
+        update(&mut s, alt_z());
+        update(&mut s, shift(MouseKind::ScrollDown));
+        assert_eq!(s.scroll_col, 0);
+        assert_ne!(vue(&s), (0, 0), "en wrap, le geste reste vertical");
+    }
+
+    #[test]
+    fn shift_molette_garde_le_defilement_de_l_aide() {
+        let mut s = opened("a\n");
+        s.help = Some(0);
+        update(
+            &mut s,
+            Event::Mouse(MouseInput {
+                kind: MouseKind::ScrollDown,
+                column: 40,
+                row: 1,
+                mods: Modifiers {
+                    shift: true,
+                    ..Modifiers::default()
+                },
+            }),
+        );
+        assert_eq!(s.help, Some(WHEEL_LINES));
+    }
+
+    #[test]
+    fn scroll_col_d_onglet_ignore_en_wrap() {
+        let mut s = large(&"a".repeat(30));
+        s.scroll_col = 6;
+        let ouvert = Event::FileOpened {
+            path: "/x/b.txt".into(),
+            text: "b".into(),
+        };
+        update(&mut s, ouvert);
+        update(&mut s, alt_z());
+        tabs::activate(&mut s, 0);
+        assert_eq!(s.scroll_col, 0);
     }
 
     #[test]

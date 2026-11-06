@@ -146,8 +146,8 @@ Clipboard: copy and paste inside IDE always work. Sharing the clipboard with Win
 | `Alt+-` / `Alt+=` | Fold / unfold the block at the cursor (or click `-` / `+` in the gutter) |
 | `Alt+_` / `Alt++` | Fold / unfold everything |
 | `Alt+L` / `Alt+T` | Show / hide line numbers, switch to the next theme |
-| `Alt+Z` | Word wrap on / off: lines break at spaces, up / down move by visual row, `Home` / `End` go to the edge of the row, then of the line (also in the palette, remappable as `toggle_word_wrap`) |
-| Horizontal wheel / `Shift+wheel` | Scroll sideways (depends on the terminal) |
+| `Alt+Z` | Word wrap on / off: lines break at spaces, up / down move by visual row, `Home` / `End` go to the edge of the row, then of the line, `End` stopping before the last character of a broken row (also in the palette, remappable as `toggle_word_wrap`) |
+| Horizontal wheel / `Shift+wheel` | Scroll sideways (depends on the terminal, no effect with word wrap on) |
 | `Ctrl+Space` | Completion (also appears as you type) |
 | `Ctrl+K` / `F12` | Hover info / go to definition |
 | `Alt+Shift+F` | Format the file (also `Ctrl+0` in kitty, WezTerm, foot, Ghostty, Alacritty) |

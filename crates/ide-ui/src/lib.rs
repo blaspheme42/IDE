@@ -148,7 +148,13 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
             Some(GitMark::DeletedAbove) => ("▔", theme.git_deleted),
         };
         let mark = Span::styled(bar, Style::new().fg(color));
-        let mut row = vec![mark.clone()];
+        // Une suppression se marque une fois : `▁` et `▔` ne se répètent pas sur les rangées de suite.
+        let next_mark = if bar == "▎" {
+            mark.clone()
+        } else {
+            Span::raw(" ")
+        };
+        let mut row = vec![mark];
         if state.settings.line_numbers {
             let w = usize::from(gutter.width).saturating_sub(4);
             row.push(Span::styled(format!("{:>w$} ", i + 1), style));
@@ -225,7 +231,7 @@ pub fn render_with(state: &State, frame: &mut Frame, theme: &Theme) {
             numbers.push(if r.sub == 0 {
                 head.clone()
             } else {
-                Line::from(mark.clone())
+                Line::from(next_mark.clone())
             });
             // shortcut: après un emoji ZWJ, `visible_slice` compte chaque char et son taquet de tabulation peut différer de `row_col`, à aligner s'il passe aux graphèmes.
             let mut spans = visible_slice(

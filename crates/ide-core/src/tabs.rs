@@ -116,7 +116,12 @@ fn put_active(state: &mut State, t: Tab, i: usize) {
     state.doc = t.doc;
     state.scroll_line = t.scroll_line;
     state.scroll_row = t.scroll_row;
-    state.scroll_col = t.scroll_col;
+    // Sauvé hors wrap, il couperait chaque rangée si le wrap a été activé depuis.
+    state.scroll_col = if state.settings.word_wrap {
+        0
+    } else {
+        t.scroll_col
+    };
     state.active = i;
     state.dragging = false;
     // Le Ctrl+W armé visait l'onglet qu'on quitte.
