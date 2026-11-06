@@ -1604,6 +1604,14 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "bug: dernière rangée pleine, « ⋯ » tombe hors de la zone de texte et disparaît"]
+    fn wrap_repli_marque_visible_sur_rangee_pleine() {
+        let mut s = enroule(&format!("{}\n    x\n    y\nb", "a".repeat(W)));
+        s.doc.toggle_fold(0);
+        assert!(ligne(&draw(&s), Y).contains('⋯'));
+    }
+
+    #[test]
     fn wrap_selection_a_cheval_sur_deux_rangees() {
         let b = enroule_selection(&longue(W), W - 2..W + 2);
         assert_eq!(inverses(&b, 0, 42), [39, 40]);
