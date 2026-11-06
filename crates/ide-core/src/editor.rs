@@ -18,6 +18,8 @@ pub fn gutter_width(state: &State) -> u16 {
 
 /// Lignes défilées par cran de molette.
 pub(crate) const WHEEL_LINES: usize = 3;
+/// Colonnes défilées par cran de molette horizontale.
+const WHEEL_COLS: usize = 6;
 
 pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     terminal::release_hidden_focus(state);
@@ -26,7 +28,7 @@ pub(crate) fn update(state: &mut State, event: Event) -> Vec<Command> {
     // ou si le panneau se ferme (taille de l'éditeur).
     let keep_view = state.focus == crate::Focus::Terminal
         || matches!(&event, Event::TerminalExited { .. })
-        || matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown) || terminal::owns_mouse(state, *m));
+        || matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseKind::ScrollUp | MouseKind::ScrollDown | MouseKind::ScrollLeft | MouseKind::ScrollRight) || terminal::owns_mouse(state, *m));
     let version = state.doc.version();
     let cursor = state.doc.cursor();
     let size = editor_size(state);
@@ -271,6 +273,8 @@ fn mouse(state: &mut State, m: MouseInput) {
     // Ligne 0 : onglets, puis le bandeau de copie de secours s'il est affiché, puis le texte.
     let top = TAB_BAR_HEIGHT + crate::banner_height(state);
     let bottom = top + editor_size(state).1;
+    let wrap = crate::wrap_width(state);
+    let view = (state.scroll_line, state.scroll_row);
     match m.kind {
         MouseKind::Down if m.row < TAB_BAR_HEIGHT => {
             state.dragging = false;
@@ -285,15 +289,22 @@ fn mouse(state: &mut State, m: MouseInput) {
                 tabs::activate(state, i);
             }
         }
-        MouseKind::ScrollUp => {
-            state.scroll_line = state
-                .doc
-                .step_visible(state.scroll_line, WHEEL_LINES, false);
+        MouseKind::ScrollUp | MouseKind::ScrollDown => {
+            let down = m.kind == MouseKind::ScrollDown;
+            (state.scroll_line, state.scroll_row) =
+                state.doc.step_rows(view, WHEEL_LINES, down, wrap);
         }
-        MouseKind::ScrollDown => {
-            state.scroll_line = state.doc.step_visible(state.scroll_line, WHEEL_LINES, true);
+        MouseKind::ScrollLeft | MouseKind::ScrollRight
+            if wrap.is_some() || !(top..bottom).contains(&m.row) => {}
+        MouseKind::ScrollLeft => state.scroll_col = state.scroll_col.saturating_sub(WHEEL_COLS),
+        MouseKind::ScrollRight => {
+            let doc = &state.doc;
+            let rows = doc.visual_rows(view, usize::from(bottom - top), None);
+            let width = |line| doc.display_col(line, doc.line_text(line).chars().count());
+            let widest = rows.iter().map(|r| width(r.line)).max().unwrap_or(0);
+            let limit = widest.saturating_sub(crate::text_width(state));
+            state.scroll_col = (state.scroll_col + WHEEL_COLS).min(limit.max(state.scroll_col));
         }
-        MouseKind::ScrollLeft | MouseKind::ScrollRight => {}
         MouseKind::Up => state.dragging = false,
         // Clic dans la gouttière : replie ou déplie le bloc de la ligne.
         MouseKind::Down
@@ -303,11 +314,12 @@ fn mouse(state: &mut State, m: MouseInput) {
         {
             state.dragging = false;
             let rows = usize::from(m.row - top) + 1;
-            if let Some(&line) = state
+            let line = state
                 .doc
-                .visible_lines(state.scroll_line, rows)
+                .visual_rows(view, rows, wrap)
                 .get(rows - 1)
-            {
+                .map(|r| r.line);
+            if let Some(line) = line {
                 state.doc.toggle_fold(line);
             }
         }
@@ -319,9 +331,10 @@ fn mouse(state: &mut State, m: MouseInput) {
         MouseKind::Down | MouseKind::Drag => {
             state.dragging = true;
             let row = usize::from(m.row.saturating_sub(top));
-            let line = state.doc.step_visible(state.scroll_line, row, true);
-            let col = state.scroll_col + usize::from(m.column.saturating_sub(left));
-            let pos = state.doc.pos_at(line, col);
+            let (line, sub) = state.doc.step_rows(view, row, true, wrap);
+            let shift = wrap.map_or(state.scroll_col, |_| 0);
+            let col = shift + usize::from(m.column.saturating_sub(left));
+            let pos = state.doc.pos_in_row(line, sub, col, wrap);
             let extend = m.kind == MouseKind::Drag || m.mods.shift;
             state.doc.set_cursor(pos, extend);
         }
@@ -441,6 +454,7 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         return cmds;
     }
     let page = usize::from(editor_size(state).1).max(1);
+    let wrap = crate::wrap_width(state);
     let doc = &mut state.doc;
     if k.mods.ctrl && !k.mods.alt {
         match k.key {
@@ -524,6 +538,13 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
             Key::Char('_' | '-') => doc.fold_all(),
             Key::Char('+' | '=') => doc.unfold_all(),
             Key::Char('l' | 'L') => state.settings.line_numbers ^= true,
+            Key::Char('z' | 'Z') => {
+                state.settings.word_wrap ^= true;
+                // `set_cursor` oublie `preferred_col`, relative à des rangées qui viennent de changer.
+                doc.set_cursor(doc.cursor(), doc.selection().is_some());
+                // Ici et pas seulement dans `update` : depuis la palette, focus au terminal, `keep_view` l'y saute.
+                scroll_to_cursor(state);
+            }
             Key::Char('t' | 'T') => {
                 // Thème inconnu (rendu en sombre) : comme le premier.
                 let i = crate::THEMES
@@ -570,12 +591,12 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
         Key::Delete => doc.delete(),
         Key::Left => doc.move_left(ext),
         Key::Right => doc.move_right(ext),
-        Key::Up => doc.move_up(1, ext),
-        Key::Down => doc.move_down(1, ext),
-        Key::Home => doc.move_line_start(ext),
-        Key::End => doc.move_line_end(ext),
-        Key::PageUp => doc.move_up(page, ext),
-        Key::PageDown => doc.move_down(page, ext),
+        Key::Up => doc.move_rows(1, false, wrap, ext),
+        Key::Down => doc.move_rows(1, true, wrap, ext),
+        Key::Home => doc.move_row_start(wrap, ext),
+        Key::End => doc.move_row_end(wrap, ext),
+        Key::PageUp => doc.move_rows(page, false, wrap, ext),
+        Key::PageDown => doc.move_rows(page, true, wrap, ext),
         _ => state.status = k.to_string(),
     }
     vec![]
@@ -583,19 +604,30 @@ fn key(state: &mut State, mut k: KeyInput) -> Vec<Command> {
 
 /// Fait défiler juste assez pour que le curseur reste dans la zone de texte.
 fn scroll_to_cursor(state: &mut State) {
-    let (line, col) = state.doc.cursor_line_col();
-    let (w, h) = editor_size(state);
-    let h = usize::from(h).max(1);
-    let w = usize::from(w.saturating_sub(gutter_width(state))).max(1);
-    // En lignes visibles : un bloc replié n'occupe qu'une rangée.
+    let h = usize::from(editor_size(state).1).max(1);
+    let w = crate::text_width(state);
+    let wrap = crate::wrap_width(state);
+    // En rangées visibles : un bloc replié n'en occupe qu'une, une ligne enroulée plusieurs.
     let doc = &state.doc;
-    let top = doc.step_visible(state.scroll_line, 0, false);
-    state.scroll_line = match doc.rows_between(top, line) {
-        None => line.min(top),
-        Some(rows) if rows >= h => doc.step_visible(line, h - 1, false),
-        Some(_) => top,
+    let (line, sub, col) = doc.row_col(doc.cursor(), wrap);
+    let cur = (line, sub);
+    // Sans avancer : ramène une ligne masquée à son en-tête et borne un `scroll_row` périmé.
+    let top = doc.step_rows((state.scroll_line, state.scroll_row), 0, false, wrap);
+    (state.scroll_line, state.scroll_row) = if cur < top {
+        cur
+    } else if doc
+        .visual_rows(top, h, wrap)
+        .iter()
+        .any(|r| (r.line, r.sub) == cur)
+    {
+        top
+    } else {
+        doc.step_rows(cur, h - 1, false, wrap)
     };
-    state.scroll_col = state.scroll_col.clamp(col.saturating_sub(w - 1), col);
+    state.scroll_col = match wrap {
+        Some(_) => 0,
+        None => state.scroll_col.clamp(col.saturating_sub(w - 1), col),
+    };
 }
 
 const PAIRS: [(char, char); 5] = [('(', ')'), ('[', ']'), ('{', '}'), ('"', '"'), ('\'', '\'')];
@@ -1128,6 +1160,278 @@ mod tests {
     }
     fn texte(s: &State) -> String {
         s.doc.rope().to_string()
+    }
+
+    fn alt_touche(c: char) -> Event {
+        Event::Key(KeyInput {
+            key: Key::Char(c),
+            mods: Modifiers {
+                alt: true,
+                ..Modifiers::default()
+            },
+        })
+    }
+    fn alt_z() -> Event {
+        alt_touche('z')
+    }
+    /// Texte sur 10 colonnes à partir de la colonne 38, 5 lignes à partir de la ligne 1.
+    fn large(text: &str) -> State {
+        let mut s = opened(text);
+        let resize = Event::Resize {
+            width: 48,
+            height: 7,
+        };
+        update(&mut s, resize);
+        s
+    }
+    /// `large` avec le retour à la ligne : rangées de 9 colonnes.
+    fn enroule(text: &str) -> State {
+        let mut s = large(text);
+        update(&mut s, alt_z());
+        assert_eq!(crate::wrap_width(&s), Some(9));
+        s
+    }
+    fn vue(s: &State) -> (usize, usize) {
+        (s.scroll_line, s.scroll_row)
+    }
+    /// (ligne, rangée, colonne) du curseur.
+    fn rangee(s: &State) -> (usize, usize, usize) {
+        s.doc.row_col(s.doc.cursor(), crate::wrap_width(s))
+    }
+    fn curseur_visible(s: &State) -> bool {
+        let (line, sub, _) = rangee(s);
+        let h = usize::from(editor_size(s).1);
+        s.doc
+            .visual_rows(vue(s), h, crate::wrap_width(s))
+            .iter()
+            .any(|r| (r.line, r.sub) == (line, sub))
+    }
+
+    #[test]
+    fn wrap_curseur_atteignable_dans_une_ligne_plus_haute_que_l_ecran() {
+        // 12 rangées, 5 à l'écran.
+        let mut s = enroule(&format!("{}\nz", "a".repeat(108)));
+        for _ in 0..12 {
+            update(&mut s, k(Key::Down));
+            assert!(curseur_visible(&s), "{:?} {:?}", rangee(&s), vue(&s));
+        }
+        assert_eq!(rangee(&s).0, 1);
+        assert_eq!(vue(&s), (0, 8));
+        for _ in 0..12 {
+            update(&mut s, k(Key::Up));
+            assert!(curseur_visible(&s), "{:?} {:?}", rangee(&s), vue(&s));
+        }
+        assert_eq!(vue(&s), (0, 0));
+    }
+
+    #[test]
+    fn wrap_ctrl_fin_et_ctrl_debut() {
+        let mut s = enroule(&"a".repeat(108));
+        update(&mut s, avec(Key::End, true, false));
+        assert_eq!(s.doc.cursor(), 108);
+        assert_eq!(vue(&s), (0, 7));
+        update(&mut s, avec(Key::Home, true, false));
+        assert_eq!(vue(&s), (0, 0));
+    }
+
+    #[test]
+    fn wrap_haut_bas_relatifs_a_la_rangee() {
+        let mut s = enroule(&format!("{}\nab", "a".repeat(20)));
+        s.doc.set_cursor(3, false);
+        update(&mut s, k(Key::Down));
+        assert_eq!(rangee(&s), (0, 1, 3));
+        update(&mut s, k(Key::Down));
+        assert_eq!(rangee(&s), (0, 2, 2)); // dernière rangée, 2 colonnes
+        update(&mut s, k(Key::Down));
+        assert_eq!(rangee(&s), (1, 0, 2));
+        update(&mut s, k(Key::Up));
+        update(&mut s, k(Key::Up));
+        assert_eq!(rangee(&s), (0, 1, 3));
+        update(&mut s, avec(Key::Down, false, true));
+        assert!(s.doc.selection().is_some());
+    }
+
+    #[test]
+    fn wrap_page_precedente_et_suivante() {
+        let mut s = enroule(&"a".repeat(108));
+        s.doc.set_cursor(2, false);
+        update(&mut s, k(Key::PageDown));
+        assert_eq!(rangee(&s), (0, 5, 2));
+        assert_eq!(vue(&s), (0, 1));
+        update(&mut s, k(Key::PageDown));
+        assert_eq!(rangee(&s), (0, 10, 2));
+        update(&mut s, k(Key::PageUp));
+        assert_eq!(rangee(&s), (0, 5, 2));
+        assert_eq!(vue(&s), (0, 5));
+    }
+
+    #[test]
+    fn wrap_debut_et_fin_a_double_appui() {
+        let mut s = enroule(&"a".repeat(30));
+        s.doc.set_cursor(12, false);
+        update(&mut s, k(Key::Home));
+        assert_eq!(s.doc.cursor(), 9);
+        update(&mut s, k(Key::Home));
+        assert_eq!(s.doc.cursor(), 0);
+        s.doc.set_cursor(12, false);
+        update(&mut s, k(Key::End));
+        assert_eq!(s.doc.cursor(), 17);
+        update(&mut s, k(Key::End));
+        assert_eq!(s.doc.cursor(), 30);
+    }
+
+    #[test]
+    fn wrap_clic_sur_rangee_de_suite() {
+        let mut s = enroule(&format!("{}\nz", "a".repeat(20)));
+        update(&mut s, souris(MouseKind::Down, 40, 2));
+        assert_eq!(s.doc.cursor(), 11);
+        update(&mut s, souris(MouseKind::Drag, 39, 3));
+        assert_eq!(s.doc.selection(), Some(11..19));
+        // Au-delà de la fin de rangée : on reste dessus.
+        update(&mut s, souris(MouseKind::Down, 47, 1));
+        assert_eq!(rangee(&s), (0, 0, 8));
+        // Vue décalée d'une rangée.
+        s.scroll_row = 1;
+        update(&mut s, souris(MouseKind::Down, 38, 1));
+        assert_eq!(s.doc.cursor(), 9);
+    }
+
+    #[test]
+    fn wrap_molette_verticale_par_rangees() {
+        let mut s = enroule(&"a".repeat(108));
+        update(&mut s, souris(MouseKind::ScrollDown, 40, 2));
+        assert_eq!((vue(&s), s.doc.cursor()), ((0, 3), 0));
+        update(&mut s, souris(MouseKind::ScrollDown, 40, 2));
+        update(&mut s, souris(MouseKind::ScrollUp, 40, 2));
+        assert_eq!(vue(&s), (0, 3));
+    }
+
+    #[test]
+    fn wrap_clic_gouttiere_sur_rangee_de_suite() {
+        let mut s = enroule(&format!("{}\n  x\n  y\nz", "a".repeat(20)));
+        update(&mut s, souris(MouseKind::Down, 31, 2));
+        assert!(s.doc.is_folded(0));
+        update(&mut s, souris(MouseKind::Down, 31, 3));
+        assert!(!s.doc.is_folded(0));
+        // Sous la dernière rangée : rien.
+        let mut s = enroule("a\n  x");
+        update(&mut s, souris(MouseKind::Down, 31, 4));
+        assert!(!s.doc.is_folded(0));
+    }
+
+    #[test]
+    fn alt_z_remet_scroll_col_a_zero_et_oublie_la_colonne_preferee() {
+        let mut s = large(&"a".repeat(30));
+        update(&mut s, k(Key::End));
+        assert_eq!(s.scroll_col, 21);
+        update(&mut s, alt_z());
+        assert!(s.settings.word_wrap);
+        assert_eq!(s.scroll_col, 0);
+        assert!(curseur_visible(&s));
+        update(&mut s, alt_z());
+        assert!(!s.settings.word_wrap);
+        assert_eq!((vue(&s).1, s.scroll_col), (0, 21));
+
+        let mut s = large("abcdefgh\nab\nabcdefgh");
+        s.doc.set_cursor(5, false);
+        update(&mut s, k(Key::Down));
+        update(&mut s, alt_z());
+        update(&mut s, k(Key::Down));
+        assert_eq!(rangee(&s), (2, 0, 2));
+    }
+
+    #[test]
+    fn alt_z_depuis_la_palette_focus_au_terminal() {
+        let mut s = large(&"a".repeat(30));
+        update(&mut s, k(Key::End));
+        update(&mut s, alt_touche('j'));
+        assert_eq!(s.focus, crate::Focus::Terminal);
+        s.replaying = true;
+        update(&mut s, alt_z());
+        assert_eq!((s.settings.word_wrap, s.scroll_col), (true, 0));
+    }
+
+    #[test]
+    fn scroll_row_perime_borne() {
+        let mut s = enroule(&"a".repeat(20));
+        s.scroll_row = 99;
+        update(&mut s, k(Key::Right));
+        assert_eq!(vue(&s), (0, 0));
+        s.scroll_row = 2;
+        update(&mut s, alt_z());
+        assert_eq!(vue(&s), (0, 0));
+    }
+
+    #[test]
+    fn scroll_row_garde_par_onglet() {
+        let mut s = enroule(&"a".repeat(108));
+        update(&mut s, avec(Key::End, true, false));
+        assert_eq!(vue(&s), (0, 7));
+        let ouvert = Event::FileOpened {
+            path: "/x/b.txt".into(),
+            text: "b".into(),
+        };
+        update(&mut s, ouvert);
+        assert_eq!(vue(&s), (0, 0));
+        tabs::activate(&mut s, 0);
+        assert_eq!(vue(&s), (0, 7));
+    }
+
+    #[test]
+    fn molette_horizontale_bornee_par_la_ligne_visible_la_plus_large() {
+        // 10 colonnes de texte, ligne de 30 : 20 au plus.
+        let mut s = large(&format!("{}\nab", "a".repeat(30)));
+        for attendu in [6, 12, 18, 20, 20] {
+            update(&mut s, souris(MouseKind::ScrollRight, 40, 1));
+            assert_eq!(s.scroll_col, attendu);
+        }
+        assert_eq!(s.doc.cursor(), 0, "le curseur ne bouge pas");
+        update(&mut s, souris(MouseKind::ScrollLeft, 40, 1));
+        assert_eq!(s.scroll_col, 14);
+        // Le décalage compte dans un clic.
+        update(&mut s, souris(MouseKind::Down, 39, 1));
+        assert_eq!((s.doc.cursor(), s.scroll_col), (15, 14));
+        // Ligne large hors de vue : elle ne compte pas, et le décalage ne recule pas pour autant.
+        s.scroll_line = 1;
+        update(&mut s, souris(MouseKind::ScrollRight, 40, 1));
+        assert_eq!(s.scroll_col, 14);
+        s.scroll_col = 0;
+        update(&mut s, souris(MouseKind::ScrollRight, 40, 1));
+        assert_eq!(s.scroll_col, 0);
+        s.scroll_col = 3;
+        update(&mut s, souris(MouseKind::ScrollLeft, 40, 1));
+        assert_eq!(s.scroll_col, 0);
+    }
+
+    #[test]
+    fn molette_horizontale_sans_effet_en_wrap() {
+        let mut s = enroule(&"a".repeat(30));
+        update(&mut s, souris(MouseKind::ScrollRight, 40, 1));
+        assert_eq!(s.scroll_col, 0);
+        s.scroll_col = 6; // même périmé
+        update(&mut s, souris(MouseKind::ScrollLeft, 40, 1));
+        assert_eq!(s.scroll_col, 6);
+    }
+
+    #[test]
+    fn molette_horizontale_sans_effet_hors_du_texte() {
+        let mut s = large(&"a".repeat(50));
+        let resize = Event::Resize {
+            width: 48,
+            height: 30,
+        };
+        update(&mut s, resize);
+        update(&mut s, alt_touche('j'));
+        let bas = 1 + editor_size(&s).1;
+        for row in [0, bas, bas + 3, 29] {
+            update(&mut s, souris(MouseKind::ScrollRight, 40, row));
+            assert_eq!(s.scroll_col, 0, "rangée {row}");
+        }
+        update(&mut s, souris(MouseKind::ScrollRight, 40, bas - 1));
+        assert_eq!(s.scroll_col, 6);
+        // Dans l'explorateur non plus.
+        update(&mut s, souris(MouseKind::ScrollRight, 5, 1));
+        assert_eq!(s.scroll_col, 6);
     }
 
     #[test]
